@@ -2,6 +2,8 @@
 
 **统一感知物联网系统（Unisence IoT）** 是一套高性能、功能完整、可扩展的物联网基础平台。
 
+开源地址：[GitHub](https://github.com/davidricardo1026/unisence-iot) · [Gitee](https://gitee.com/david0624/unisence-iot)
+
 它不是只有设备列表和几张图表的管理后台，而是把物联网平台真正需要的数据主链路一次搭好：*
 *产品与设备管理、物模型、设备接入、实时数据处理、时序存储、在线状态、规则引擎、数据路由、权限与管理控制台**，全部围绕百万设备、百万
 QPS 的规模化数据处理设计。
