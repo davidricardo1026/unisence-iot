@@ -1,0 +1,464 @@
+@import 'tailwindcss';
+
+/*
+ * UNISENCE design tokens
+ *
+ * This is the single place for product-wide visual decisions. Business views
+ * should consume these variables (or the semantic Element Plus variables
+ * mapped below) instead of introducing literal colours, radii and spacing.
+ */
+:root {
+    --ui-color-primary: #2563eb;
+    --ui-color-primary-light: #eff6ff;
+    --ui-color-success: #16a34a;
+    --ui-color-warning: #d97706;
+    --ui-color-danger: #dc2626;
+    --ui-color-danger-light: #fef2f2;
+    --ui-color-info: #64748b;
+    --ui-text-primary: #1f2937;
+    --ui-text-regular: #4b5563;
+    --ui-text-secondary: #64748b;
+    --ui-border: #dfe4ea;
+    --ui-border-light: #eef0f3;
+    --ui-bg: #fff;
+    --ui-bg-page: #f5f7fa;
+    --ui-radius-sm: 3px;
+    --ui-radius-md: 6px;
+    --ui-shadow-dialog: 0 12px 32px rgb(15 23 42 / 16%);
+    --ui-font-xs: 11px;
+    --ui-font-sm: 12px;
+    --ui-control-height: 24px;
+    --ui-form-label-width: 76px;
+    --ui-space-1: 4px;
+    --ui-space-2: 8px;
+    --ui-space-3: 12px;
+    --ui-space-4: 16px;
+
+    /* Element Plus consumes the same semantic source of truth. */
+    --el-color-primary: var(--ui-color-primary);
+    --el-color-success: var(--ui-color-success);
+    --el-color-warning: var(--ui-color-warning);
+    --el-color-danger: var(--ui-color-danger);
+    --el-color-info: var(--ui-color-info);
+    --el-text-color-primary: var(--ui-text-primary);
+    --el-text-color-regular: var(--ui-text-regular);
+    --el-text-color-secondary: var(--ui-text-secondary);
+    --el-border-color: var(--ui-border);
+    --el-border-color-light: var(--ui-border-light);
+    --el-border-radius-small: var(--ui-radius-sm);
+    --el-border-radius-base: var(--ui-radius-md);
+    --el-component-size-small: var(--ui-control-height);
+    --el-font-size-base: var(--ui-font-xs);
+    --el-font-size-small: var(--ui-font-xs);
+}
+
+html,
+body,
+#app {
+    height: 100%;
+    margin: 0;
+}
+
+body {
+    font-family: 'Helvetica Neue',
+    Helvetica,
+    'PingFang SC',
+    'Hiragino Sans GB',
+    'Microsoft YaHei',
+    Arial,
+    sans-serif;
+    -webkit-font-smoothing: antialiased;
+    color: var(--ui-text-regular);
+    background: var(--ui-bg-page);
+}
+
+/* =========================================================================
+   Element Plus 悬浮气泡弹出菜单的极致紧凑化覆盖 (针对折叠侧边栏 hover 弹出)
+   ========================================================================= */
+.el-menu--popup {
+    padding: 1px 0 !important;
+    min-width: 96px !important; /* 增加 1/3 宽度 (72px + 24px = 96px)，完美折中体验 */
+    width: 96px !important; /* 强锁 96px 黄金比例宽度 */
+}
+
+.el-menu--popup .el-menu-item {
+    height: 26px !important; /* 保持精致的 26px 弹出项高度 */
+    line-height: 26px !important;
+    font-size: 11px !important; /* 保持 11px 高密度字号 */
+    border-radius: 3px;
+    margin: 1px 3px !important; /* 优化侧边距，使 96px 版面更显居中均衡 */
+    padding: 0 4px !important;
+    text-align: center !important; /* 保持文本绝对居中对齐 */
+}
+
+.el-menu--popup .el-menu-item.is-active {
+    background-color: #eff6ff !important;
+    color: #2563eb !important;
+    font-weight: 500;
+}
+
+/* =========================================================================
+   极致紧凑型查询表单 (High-Density Query Form Spec)
+   ========================================================================= */
+.compact-query-form {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    gap: var(--ui-space-2) !important;
+    padding-bottom: var(--ui-space-2);
+    border-bottom: 1px solid var(--ui-border-light);
+}
+
+/* 覆盖行内表单项的默认外边距 */
+.compact-query-form .el-form-item,
+.compact-query-form.el-form--inline .el-form-item {
+    margin-right: 0 !important; /* 依赖 flex gap 或者是更小的外边距 */
+    margin-bottom: 0 !important; /* 消除下边距干扰 */
+    display: inline-flex !important;
+    align-items: center !important;
+}
+
+/* 缩减标签 label 的内边距 */
+.compact-query-form .el-form-item__label,
+.compact-query-form.el-form--inline .el-form-item__label {
+    padding-right: var(--ui-space-1) !important;
+    font-size: var(--ui-font-xs) !important;
+    height: var(--ui-control-height) !important;
+    line-height: var(--ui-control-height) !important;
+    color: var(--ui-text-regular) !important;
+}
+
+/* 保证表单右侧的操作按钮也紧贴 */
+.compact-query-form .el-form-item__content {
+    display: flex !important;
+    align-items: center !important;
+}
+
+/* 除全局导航页签外，所有业务内页签统一使用 28px 高密度规格。 */
+.compact-tabs .el-tabs__header {
+    margin-bottom: var(--ui-space-1);
+}
+
+.compact-tabs .el-tabs__item {
+    height: 28px;
+    padding: 0 10px;
+    font-size: var(--ui-font-xs);
+    line-height: 28px;
+}
+
+.compact-tabs .el-tabs__active-bar {
+    height: 2px;
+}
+
+/* 设备模块统一编辑弹框：白底标签格与输入控件组成连续、等高的一行 */
+.compact-edit-dialog .el-dialog__body {
+    padding: 12px 20px 4px;
+}
+
+.compact-edit-dialog .el-dialog__footer {
+    padding: 10px 20px 14px;
+    border-top: 1px solid var(--ui-border-light);
+}
+
+.compact-edit-dialog .el-dialog__header {
+    margin-right: 0;
+    padding: var(--ui-space-1) var(--ui-space-3);
+    border-bottom: 1px solid var(--el-border-color-lighter);
+    box-shadow: inset 3px 0 0 var(--el-color-primary);
+}
+
+.compact-edit-dialog .el-dialog__title {
+    color: var(--el-text-color-primary);
+    font-size: var(--ui-font-sm);
+    font-weight: 600;
+    line-height: 20px;
+}
+
+.compact-edit-dialog .el-dialog__headerbtn {
+    width: 28px;
+    height: 28px;
+}
+
+.compact-edit-dialog.el-dialog {
+    border-radius: var(--ui-radius-md);
+    box-shadow: var(--ui-shadow-dialog);
+}
+
+.compact-edit-dialog-scrollable {
+    max-height: 90vh;
+    overflow: hidden;
+}
+
+.compact-edit-dialog-scrollable .el-dialog__body {
+    max-height: calc(90vh - 64px);
+    overflow-y: auto;
+}
+
+/* 物模型定义弹窗在较短视口内滚动，避免内容超出屏幕。 */
+.model-definition-dialog .el-dialog__body {
+    max-height: calc(90vh - 108px);
+    overflow-x: hidden;
+}
+
+
+.compact-edit-form {
+    padding: 0;
+    background: var(--el-bg-color);
+}
+
+.compact-edit-form .el-form-item {
+    display: flex;
+    align-items: flex-start;
+    margin-bottom: var(--ui-space-3);
+}
+
+.compact-edit-form .el-form-item__label {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 76px !important;
+    height: var(--ui-control-height);
+    margin: 0;
+    padding: 0 var(--ui-space-1);
+    color: var(--el-text-color-regular);
+    font-size: var(--ui-font-xs);
+    line-height: var(--ui-control-height);
+    border: 1px solid var(--ui-border);
+    border-right: 0;
+    border-radius: var(--ui-radius-sm) 0 0 var(--ui-radius-sm);
+    box-sizing: border-box;
+}
+
+.compact-edit-form .el-form-item__content {
+    flex: 1;
+    flex-wrap: wrap;
+    min-width: 0;
+    line-height: var(--ui-control-height);
+}
+
+/*
+ * Validation errors participate in layout instead of being absolutely placed
+ * between two compact rows. The message spans the complete label/control row,
+ * giving long API and validation messages enough room to wrap naturally.
+ */
+.compact-edit-form .el-form-item__error {
+    position: static;
+    display: flex;
+    flex-basis: calc(100% + var(--ui-form-label-width));
+    align-items: center;
+    width: calc(100% + var(--ui-form-label-width));
+    min-height: var(--ui-control-height);
+    margin-top: var(--ui-space-1);
+    margin-left: calc(var(--ui-form-label-width) * -1);
+    padding: var(--ui-space-1) var(--ui-space-2);
+    color: var(--ui-color-danger);
+    font-size: var(--ui-font-xs);
+    line-height: 16px;
+    overflow-wrap: anywhere;
+    background: var(--ui-color-danger-light);
+    border-left: 2px solid var(--ui-color-danger);
+    border-radius: var(--ui-radius-sm);
+    box-sizing: border-box;
+}
+
+.compact-edit-form .el-input,
+.compact-edit-form .el-select,
+.compact-edit-form .el-textarea,
+.compact-edit-form .el-input-number {
+    width: 100%;
+}
+
+.compact-edit-form .el-input__wrapper,
+.compact-edit-form .el-select__wrapper,
+.compact-edit-form .el-textarea__inner,
+.compact-edit-form .el-input-number {
+    border-radius: 0 var(--ui-radius-sm) var(--ui-radius-sm) 0;
+}
+
+.compact-edit-form .el-radio-group .el-radio {
+    height: var(--ui-control-height);
+    margin-right: 16px;
+    line-height: var(--ui-control-height);
+}
+
+.compact-edit-form .el-radio-group .el-radio__label {
+    padding-left: 4px;
+    font-size: var(--ui-font-xs);
+    line-height: var(--ui-control-height);
+}
+
+.compact-edit-form .el-input__wrapper,
+.compact-edit-form .el-select__wrapper {
+    min-height: var(--ui-control-height);
+}
+
+.compact-edit-form .el-radio-group {
+    width: 100%;
+    min-height: var(--ui-control-height);
+    padding: 0 var(--ui-space-2);
+    border: 1px solid var(--ui-border);
+    border-radius: 0 var(--ui-radius-sm) var(--ui-radius-sm) 0;
+    box-sizing: border-box;
+}
+
+.compact-edit-form .el-form-item:has(.el-textarea) .el-form-item__label {
+    align-self: stretch;
+    height: auto;
+}
+
+.compact-color-field {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: var(--ui-space-2);
+    width: 100%;
+    padding: var(--ui-space-2);
+    background: linear-gradient(180deg, #fcfcfd 0%, #f8fafc 100%);
+    border: 1px solid var(--ui-border);
+    border-radius: 0 var(--ui-radius-sm) var(--ui-radius-sm) 0;
+    box-sizing: border-box;
+}
+
+.compact-color-picker-row {
+    display: flex;
+    gap: var(--ui-space-2);
+    align-items: center;
+    width: 100%;
+}
+
+.compact-color-picker-row .el-input {
+    flex: 1;
+}
+
+.compact-color-picker-row .el-input__wrapper {
+    border-radius: var(--ui-radius-sm);
+}
+
+.compact-color-picker {
+    flex: none;
+    width: 52px;
+    height: var(--ui-control-height);
+    padding: 4px;
+    cursor: pointer;
+    background: #fff;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-sm);
+    box-sizing: border-box;
+}
+
+.compact-color-preview-row {
+    display: flex;
+    gap: var(--ui-space-2);
+    align-items: center;
+    min-height: 20px;
+}
+
+.compact-color-preview-label,
+.compact-color-preview-value {
+    color: var(--el-text-color-secondary);
+    font-size: var(--ui-font-xs);
+    line-height: 16px;
+}
+
+.compact-color-preview {
+    width: 18px;
+    height: 18px;
+    border: 1px solid rgb(15 23 42 / 10%);
+    border-radius: 999px;
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 45%);
+}
+
+.compact-color-presets {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: var(--ui-space-2);
+}
+
+.compact-color-swatch {
+    width: 100%;
+    height: 24px;
+    cursor: pointer;
+    border: 1px solid rgb(15 23 42 / 10%);
+    border-radius: var(--ui-radius-sm);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 35%);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.compact-color-swatch:hover {
+    transform: translateY(-1px);
+}
+
+.compact-color-swatch.is-active {
+    box-shadow: 0 0 0 2px rgb(15 23 42 / 16%), inset 0 0 0 1px rgb(255 255 255 / 45%);
+}
+
+.compact-table-color {
+    display: inline-flex;
+    gap: var(--ui-space-2);
+    align-items: center;
+    max-width: 100%;
+}
+
+.compact-table-color-swatch {
+    flex: none;
+    width: 14px;
+    height: 14px;
+    border: 1px solid rgb(15 23 42 / 10%);
+    border-radius: 999px;
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 45%);
+}
+
+.compact-table-color-value,
+.compact-table-color-empty {
+    color: var(--el-text-color-secondary);
+    font-size: var(--ui-font-xs);
+    line-height: 16px;
+}
+
+.compact-table-color-value {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+/* Shared toolbar/table/pagination primitives for every CRUD screen. */
+.compact-action-toolbar {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--ui-space-2);
+    margin-bottom: var(--ui-space-2);
+}
+
+.compact-table-region {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.compact-pagination {
+    display: flex;
+    flex: none;
+    justify-content: flex-end;
+    margin-top: var(--ui-space-3);
+}
+
+/* =========================================================================
+   极致扁平化表格操作列按钮配置 (Global Compact Table Action Buttons Config)
+   ========================================================================= */
+
+/* 1. 自动消除 Element Plus 默认在相邻按钮间注入的 12px 左外边距，改用弹性盒间隙统一控制 */
+.el-table .el-table__cell .el-button + .el-button {
+    margin-left: 0 !important;
+}
+
+/* 2. 统一规定扁平化图标操作按钮的物理微缩间距与内边距 */
+.el-table .el-table__cell .el-button.is-link {
+    padding: 4px !important; /* 统一小巧内边距 */
+    margin: 0 !important; /* 彻底清除外边距干扰 */
+}
+
+/* 3. 增强鼠标悬浮时图标按钮的缩放与色泽质感，提示触控边界 */
+.el-table .el-table__cell .el-button.is-link:hover {
+    transform: scale(1.1);
+    transition: transform 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
