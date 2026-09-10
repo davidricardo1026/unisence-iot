@@ -1,0 +1,25 @@
+plugins {
+    id 'java-library'
+    id 'io.spring.dependency-management'
+}
+
+apply from: rootProject.file('gradle/spring-boot-bom.gradle')
+
+dependencies {
+    // 零依赖内核以 api 再导出：既有 import 路径（com.unisence.iot.common.api/util/constant.*）保持不变，
+    // 非 Spring 模块则可只依赖 cn-common-core，不再被动吃进 Spring + JDBC 栈
+    api project(':cn-common-core')
+
+    api 'org.springframework:spring-web'
+    api 'org.springframework:spring-context'
+    api 'jakarta.validation:jakarta.validation-api'
+    api "io.github.davidricardo1026:easytrans-spring-boot-starter:${rootProject.ext.versions.easytrans}"
+    api "cn.dev33:sa-token-spring-boot3-starter:${rootProject.ext.versions.saToken}"
+    api "com.baomidou:mybatis-plus-spring-boot3-starter:${rootProject.ext.versions.mybatisPlus}"
+
+    // PageRequestArgumentResolver 编译期需要 Servlet API，运行期由各 Web 服务自带
+    compileOnly 'jakarta.servlet:jakarta.servlet-api'
+
+    annotationProcessor "io.github.davidricardo1026:easytrans-processor:${rootProject.ext.versions.easytrans}"
+    annotationProcessor "org.projectlombok:lombok:${rootProject.ext.versions.lombok}"
+}

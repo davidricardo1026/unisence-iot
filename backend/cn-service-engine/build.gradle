@@ -1,0 +1,72 @@
+plugins {
+    id 'application'
+}
+
+application {
+    mainClass = 'com.unisence.iot.engine.EngineLauncher'
+}
+
+dependencies {
+    // 只依赖零依赖内核，不依赖 cn-common —— engine 是非 Spring 模块，
+    // 依赖 cn-common 会连带吃进 spring-web / mybatis-plus / spring-boot-starter-jdbc / HikariCP。
+    // 此前用 exclude 剪链只是治标，现已由 cn-common-core 从根上解决。
+    implementation project(':cn-common-core')
+
+    // 上行消息模型：解码 Kafka value 为 IotMessage，再在 RuleProcessor 边界投影成 MessageEnvelope
+    implementation project(':cn-iot-message')
+
+    // 规则脚本 SDK / 沙箱编译器 / 配置模型（与 cn-service-admin 共享同一套编译与取值域语义）
+    implementation project(':cn-rule-sdk')
+
+    // 元数据同步总线：与 cn-service-rule-stream 共用同一份水位合并、候选根构建与设备缓存。
+    // engine 只保留 MetadataSyncVerticle 这一层 Vert.x 生命周期胶水
+    implementation project(':cn-metadata-sync')
+
+    // 业务只依赖统一时序存储契约；具体驱动通过 ServiceLoader 在运行期选择。
+    implementation project(':cn-timeseries-api')
+    runtimeOnly project(':cn-timeseries-greptime')
+
+    // Vert.x 5.x core
+    implementation "io.vertx:vertx-core:${rootProject.ext.versions.vertx}"
+
+    // 协议级非阻塞客户端（engine-runtime-io.md §一bis）：依赖树只有 vertx-core + Netty，无任何 JDBC。
+    // 配 Future.await() 写成顺序代码，天然免疫虚拟线程 pinning。
+    implementation "io.vertx:vertx-mysql-client:${rootProject.ext.versions.vertx}"
+    implementation "io.vertx:vertx-redis-client:${rootProject.ext.versions.vertx}"
+
+    // 原生 Kafka client：入口消费循环是「虚拟线程 + 同步阻塞 poll」，
+    // 刻意不用 vertx-kafka-client —— 那套 Future/回调 API 与本模块禁止回调的风格相冲，
+    // 且 KafkaConsumer 绑定 Vert.x context，无法放到独立虚拟线程上跑长循环。
+    implementation "org.apache.kafka:kafka-clients:${rootProject.ext.versions.kafka}"
+
+    // 非 Spring 服务的配置方案：Vert.x 官方 ConfigRetriever，
+    // 按 file(yaml) → env → sys 顺序叠加覆盖；vertx-config-yaml 内部带 snakeyaml
+    implementation "io.vertx:vertx-config:${rootProject.ext.versions.vertx}"
+    implementation "io.vertx:vertx-config-yaml:${rootProject.ext.versions.vertx}"
+
+    // 刻意不引入 mysql-connector-j 与 HikariCP：engine 无 ORM、无 Spring 事务，
+    // 换成 vertx-mysql-client 后 JDBC 生态在此处没有价值，且消除了 Connector/J 的 pinning 风险。
+
+    // 续租节流缓存 + 设备投影 L1（device-online-state-design.md §5.3、metadata-sync-bus.md §6.6）
+    implementation "com.github.ben-manes.caffeine:caffeine:${rootProject.ext.versions.caffeine}"
+
+    // 设备 L2 缓存 payload 编解码（metadata-sync-bus.md §6.6）。
+    // cn-iot-message 把 msgpack 设为 implementation，是为了不让 cn-driver-* 绕过 MessageCodec
+    // 自己拼上行报文字节；此处编解码的是 engine 自己的缓存投影，不是上行报文，
+    // 因此直接依赖不违反那条约束。
+    implementation "org.msgpack:msgpack-core:${rootProject.ext.versions.msgpack}"
+
+    // 仅供待替换的 RuleProcessor 骨架直接使用 GroovyClassLoader（无沙箱）。
+    // Implement 阶段该骨架整体换成 cn-rule-sdk 的 RuleScriptCompiler 后，此行应删除：
+    // 业务代码不该再直接触碰 Groovy API，编译一律走 SDK 沙箱。
+    implementation "org.apache.groovy:groovy:${rootProject.ext.versions.groovy}"
+}
+
+// 本地压测/联调用：把 -Dlog4j2.* 与 -Dservice.name / -Dlog.dir 透传给 run 任务。
+// JavaExec 默认不继承 Gradle JVM 的系统属性，不加这段就只能靠 Kafka offset 反推行为。
+// **只影响本地 run，不进 jar / distribution**；配置文件见 config/log4j2-loadtest.xml。
+tasks.named('run', JavaExec) {
+    systemProperties System.getProperties().findAll { k, v ->
+        k.toString().startsWith('log4j2.') || k.toString() in ['service.name', 'log.dir', 'logging.config']
+    }
+}

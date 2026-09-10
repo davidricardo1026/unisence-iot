@@ -1,0 +1,14 @@
+# cn-driver-virtual —— **prod**。
+#
+# 虚拟驱动本就禁止在 DEV/TEST 之外启用（VirtualDriverRunner.requireValidEnvironment），
+# 本文件存在只是为了「误设 APP_PROFILE=prod 时也能正常起来并明确拒绝发数据」，
+# 而不是让它在生产可用。
+logging:
+    config: classpath:log4j2-prod.xml
+spring:
+    kafka:
+        bootstrap-servers: ${KAFKA_SERVERS}
+app:
+    driver:
+        virtual:
+            enabled: false

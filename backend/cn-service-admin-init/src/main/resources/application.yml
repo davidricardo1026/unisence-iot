@@ -1,0 +1,27 @@
+# 环境 profile 由 APP_PROFILE 驱动（两类服务共用同一环境变量，
+# 非 Spring 的 engine/rule-stream 也读它，见 architecture-features/logging-runtime.md §3.1）。
+# 本文件只放与环境无关的结构与默认值；端点、凭据与日志配置在 application-{profile}.yml。
+spring:
+    # 环境覆盖层由 APP_PROFILE 驱动。
+    # 非 Spring 的 engine/rule-stream 也读同一个变量（logging-runtime.md §3.1）
+    profiles:
+        active: ${APP_PROFILE:dev}
+    main:
+        web-application-type: none
+    application:
+        name: cn-service-admin-init
+    datasource:
+        driver-class-name: com.mysql.cj.jdbc.Driver
+        hikari:
+            minimum-idle: 1
+            maximum-pool-size: 5
+            idle-timeout: 30000
+            pool-name: cn-service-admin-init-pool
+            connection-timeout: 30000
+
+app:
+    init:
+        enabled: true
+        root-dept-name: 发展管委会
+        greptime:
+            enabled: true

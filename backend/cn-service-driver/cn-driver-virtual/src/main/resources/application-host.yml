@@ -1,0 +1,6 @@
+# cn-driver-virtual —— Debian VM 联调与压测环境。
+logging:
+    config: classpath:log4j2-dev.xml
+spring:
+    kafka:
+        bootstrap-servers: ${KAFKA_SERVERS:192.168.122.1:19092}

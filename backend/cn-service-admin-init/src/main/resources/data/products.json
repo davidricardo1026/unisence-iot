@@ -1,0 +1,62 @@
+[
+  {
+    "productKey": "syt57v",
+    "productName": "罐区设备测试产品",
+    "nodeType": 1,
+    "netType": 4,
+    "onlineTtlSeconds": 180,
+    "vendor": "Unisence",
+    "model": "VT-PT-01",
+    "description": "用于虚拟设备功能联调与全链路性能测试",
+    "attributes": {
+      "usage": "virtual-driver-load-test"
+    },
+    "deviceFormVersion": 1,
+    "deviceFormSchema": {
+      "groups": [
+        {
+          "key": "install",
+          "label": "安装信息",
+          "fields": [
+            {
+              "key": "area",
+              "label": "区域",
+              "type": "string",
+              "required": true,
+              "searchable": true,
+              "sensitive": false,
+              "listVisible": true
+            }
+          ]
+        }
+      ]
+    },
+    "properties": [
+      {
+        "identifier": "temperature",
+        "propertyName": "温度",
+        "dataType": "double",
+        "accessMode": 1,
+        "unit": "℃",
+        "retentionDays": 180
+      }
+    ],
+    "events": [
+      {
+        "identifier": "temperature_alarm",
+        "eventName": "温度告警",
+        "eventType": 2,
+        "ttlEnabled": true,
+        "ttlValue": 180,
+        "ttlUnit": "d",
+        "inputParams": [
+          {
+            "identifier": "value",
+            "name": "采样值",
+            "dataType": "text"
+          }
+        ]
+      }
+    ]
+  }
+]

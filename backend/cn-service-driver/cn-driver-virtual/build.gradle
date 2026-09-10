@@ -1,0 +1,23 @@
+plugins {
+    id 'org.springframework.boot'
+    id 'io.spring.dependency-management'
+}
+
+apply from: rootProject.file('gradle/spring-boot-app.gradle')
+
+dependencies {
+    implementation project(':cn-service-driver:cn-driver-common')
+}
+
+tasks.named('bootJar') {
+    archiveBaseName = 'cn-driver-virtual'
+}
+
+// 本地压测用：bootRun 与 application 插件的 run 一样不继承 Gradle JVM 的系统属性，
+// 不加这段就用不上 config/log4j2-loadtest.xml，压测报告只能混在 gradle 输出里。
+// **只影响本地 bootRun，不进 jar**。
+tasks.named('bootRun') {
+    systemProperties System.getProperties().findAll { k, v ->
+        k.toString().startsWith('log4j2.') || k.toString() in ['service.name', 'log.dir', 'logging.config']
+    }
+}

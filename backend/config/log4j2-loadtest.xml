@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  压测/联调专用日志配置。**不是生产配置，也不在任何模块的 classpath 上** ——
+  只能显式指定，因此对打包产物零影响。
+
+  用法（每个服务用不同的 service.name，否则会写进同一个文件）：
+
+    # 非 Spring 服务（application 插件的 run 任务）：认 log4j2.configurationFile
+    ./unisence-rule-runtime-community/bin/unisence-rule-runtime-community \
+      -Dlog4j2.configurationFile=file:<repo>/app/backend/config/log4j2-loadtest.xml \
+      -Dservice.name=rule-stream -Dlog.dir=./log
+
+    # Spring Boot 服务（cn-driver-virtual）：**必须用 logging.config**
+    # Spring Boot 的 Log4J2LoggingSystem 会在启动时重新初始化日志，只认 logging.config，
+    # 传 log4j2.configurationFile 会被它静默覆盖（2026-08-02 实测：load-report.log 一直是空的）
+    gradle :cn-service-driver:cn-driver-virtual:bootRun \
+      -Dlogging.config=file:<repo>/app/backend/config/log4j2-loadtest.xml \
+      -Dservice.name=driver -Dlog.dir=./log
+
+  为什么需要它：cn-service-engine 与 cn-service-rule-stream 的 resources 下没有任何
+  log4j2 配置，Log4j2 会退回「默认 ERROR 级 Console」——压测时链路上什么都看不到，
+  出了问题只能靠 Kafka offset 反推。生产该配什么是另一个话题（R9 可观测性），
+  本文件刻意不代为决定。
+
+  ════════ 全异步：日志不得成为被测对象的一部分 ════════
+
+  同步日志在 6 万 msg/s 下会把被测系统本身拖慢，测出来的就不是系统性能而是日志性能。
+  本配置的三条约束：
+
+  1. **所有 appender 都包在 Async 里**，且 blocking="false" —— 队列满时丢弃而不是阻塞。
+     宁可丢几行第三方 INFO，也不能让日志把业务线程按住。默认的 blocking="true"
+     会在队列满时阻塞调用线程，那正是要消灭的东西；
+  2. **immediateFlush="false"** —— 每条都 flush 会让异步队列的收益被 IO 抵消掉。
+     代价是硬崩溃时丢失缓冲区里最后几行，压测场景可接受；
+  3. **pattern 里绝不能出现 %L / %M / %C / %F** —— 这四个会强制捕获调用位置，
+     需要走一次栈回溯，开销比整条日志的其余部分加起来还大。
+     本文件的 pattern 只用 %d/%level/%t/%logger/%msg，因此 includeLocation 保持默认 false。
+
+  未用 AsyncLogger（LMAX Disruptor）是因为本仓没有 com.lmax:disruptor 依赖，
+  而为一份测试配置引入生产依赖不划算。AsyncAppender 用 ArrayBlockingQueue，
+  吞吐略低于 Disruptor，但对本用途绰绰有余。
+-->
+<Configuration status="WARN">
+    <Properties>
+        <!-- service.name 未传时统一落到 app.log，便于发现「忘了传」 -->
+        <Property name="SERVICE">${sys:service.name:-app}</Property>
+        <Property name="LOG_DIR">${sys:log.dir:-./log}</Property>
+        <!-- 刻意不含 %L/%M/%C/%F：见文件头第 3 条 -->
+        <Property name="PATTERN">%d{HH:mm:ss.SSS} %-5level [%t] %logger{1.} - %msg%n</Property>
+    </Properties>
+
+    <Appenders>
+        <Console name="Console" target="SYSTEM_OUT">
+            <PatternLayout charset="UTF-8" pattern="${PATTERN}"/>
+        </Console>
+
+        <!--
+          按启动滚动而非按大小：一次压测就是一个文件，事后对照场次看日志最直接。
+          压测跑不了多久，不设 SizeBasedTriggeringPolicy，避免一轮日志被切成好几段。
+        -->
+        <RollingFile name="File"
+                     fileName="${LOG_DIR}/${SERVICE}.log"
+                     filePattern="${LOG_DIR}/${SERVICE}-%d{yyyyMMdd-HHmmss}.log"
+                     immediateFlush="false">
+            <PatternLayout charset="UTF-8" pattern="${PATTERN}"/>
+            <Policies>
+                <OnStartupTriggeringPolicy/>
+            </Policies>
+            <DefaultRolloverStrategy max="20"/>
+        </RollingFile>
+
+        <!--
+          只收压测指标行，一轮一个文件，可直接 grep 出 rps 曲线。
+
+          **这个文件是唯一保留 immediateFlush="true" 的**：它每 10 s 才一行，
+          刷盘开销可忽略，而它的用途正是压测时 `tail -f` 盯着看。
+          跟着 File 一起关掉 flush 的话，指标会卡在缓冲区里，
+          文件在整轮压测期间一直是 0 字节（2026-08-02 实测踩到）。
+        -->
+        <RollingFile name="LoadReport"
+                     fileName="${LOG_DIR}/load-report.log"
+                     filePattern="${LOG_DIR}/load-report-%d{yyyyMMdd-HHmmss}.log"
+                     immediateFlush="true">
+            <PatternLayout charset="UTF-8" pattern="%d{HH:mm:ss} %msg%n"/>
+            <Policies>
+                <OnStartupTriggeringPolicy/>
+            </Policies>
+            <DefaultRolloverStrategy max="50"/>
+        </RollingFile>
+
+        <!--
+          文件量最大，给最大的队列。65536 条 × 约 200 B ≈ 13 MB 常驻，
+          相对 62 GB 机器可忽略，换来突发日志不丢。
+        -->
+        <Async name="AsyncFile" bufferSize="65536" blocking="false">
+            <AppenderRef ref="File"/>
+        </Async>
+
+        <!--
+          Console 是最慢的 sink：System.out 内部有 synchronized，
+          再经 gradle 的输出管道，压测时它是第一个成为瓶颈的。队列给小一点，
+          满了就丢——控制台本来就只是给人「瞄一眼」的，完整记录在文件里。
+        -->
+        <Async name="AsyncConsole" bufferSize="8192" blocking="false">
+            <AppenderRef ref="Console"/>
+        </Async>
+
+        <!--
+          压测指标每 10 s 才一条，队列再小也不可能满，因此它实际上永不丢。
+          这正是把指标单独拆一个 appender 的原因：与高频业务日志共用队列时，
+          业务日志的洪峰会把指标行一起挤掉。
+        -->
+        <Async name="AsyncLoadReport" bufferSize="1024" blocking="false">
+            <AppenderRef ref="LoadReport"/>
+        </Async>
+    </Appenders>
+
+    <Loggers>
+        <!-- 压测报告：必须可见，且单独留一份纯净的，便于事后只看指标不看噪声 -->
+        <Logger name="com.unisence.iot.driver.virtual.runtime.LoadGenerator" level="INFO" additivity="false">
+            <AppenderRef ref="AsyncConsole"/>
+            <AppenderRef ref="AsyncFile"/>
+            <AppenderRef ref="AsyncLoadReport"/>
+        </Logger>
+
+        <!-- 本项目代码全开 INFO；DEBUG 会把每条消息的发布/去重都打出来，压测时是自伤 -->
+        <Logger name="com.unisence.iot" level="INFO"/>
+
+        <!--
+          第三方降噪：Kafka 客户端在 INFO 上会打完整 ProducerConfig/ConsumerConfig 清单
+          （每个 StreamThread 一份，48 分区下刷屏），而 rebalance 与错误在 WARN 就能看到。
+        -->
+        <Logger name="org.apache.kafka" level="WARN"/>
+        <Logger name="org.apache.kafka.streams" level="INFO"/>
+        <Logger name="io.vertx" level="WARN"/>
+        <Logger name="com.alibaba.nacos" level="WARN"/>
+        <Logger name="org.springframework" level="WARN"/>
+
+        <Root level="INFO">
+            <AppenderRef ref="AsyncConsole"/>
+            <AppenderRef ref="AsyncFile"/>
+        </Root>
+    </Loggers>
+</Configuration>

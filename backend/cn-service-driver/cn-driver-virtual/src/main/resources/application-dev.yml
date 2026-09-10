@@ -1,0 +1,6 @@
+# cn-driver-virtual —— **dev**（测试驱动，仅 DEV/TEST 可启用）。
+logging:
+    config: classpath:log4j2-dev.xml
+spring:
+    kafka:
+        bootstrap-servers: ${KAFKA_SERVERS:127.0.0.1:19092}

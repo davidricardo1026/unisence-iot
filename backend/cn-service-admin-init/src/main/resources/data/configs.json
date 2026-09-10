@@ -1,0 +1,23 @@
+[
+  {
+    "id": 1,
+    "name": "系统默认标题",
+    "key": "sys.title",
+    "val": "统一感知物联网平台",
+    "type": 1
+  },
+  {
+    "id": 2,
+    "name": "启用的多渠道登录配置",
+    "key": "auth.enabled-types",
+    "val": "local",
+    "type": 1
+  },
+  {
+    "id": 3,
+    "name": "系统密码安全审计策略",
+    "key": "sys.password.policy",
+    "val": "min=5,num=1,char=1",
+    "type": 1
+  }
+]

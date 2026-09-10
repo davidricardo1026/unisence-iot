@@ -1,0 +1,46 @@
+// 全后端统一 UTF-8：编译、资源处理、测试与 Java 进程启动
+
+def utf8JvmArgs = [
+    '-Dfile.encoding=UTF-8',
+    '-Dsun.jnu.encoding=UTF-8',
+    '-Dsun.stdout.encoding=UTF-8',
+    '-Dsun.stderr.encoding=UTF-8',
+    '-Duser.language=zh',
+    '-Duser.country=CN'
+]
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.compilerArgs += ['-parameters']
+}
+
+tasks.withType(GroovyCompile).configureEach {
+    groovyOptions.encoding = 'UTF-8'
+}
+
+tasks.withType(ProcessResources).configureEach {
+    filteringCharset = 'UTF-8'
+}
+
+tasks.withType(Javadoc).configureEach {
+    options.encoding = 'UTF-8'
+    options.charSet = 'UTF-8'
+    options.docEncoding = 'UTF-8'
+}
+
+tasks.withType(Test).configureEach {
+    systemProperty 'file.encoding', 'UTF-8'
+    jvmArgs utf8JvmArgs
+}
+
+tasks.withType(JavaExec).configureEach {
+    systemProperty 'file.encoding', 'UTF-8'
+    jvmArgs utf8JvmArgs
+}
+
+plugins.withId('org.springframework.boot') {
+    tasks.named('bootRun') {
+        systemProperty 'file.encoding', 'UTF-8'
+        jvmArgs utf8JvmArgs
+    }
+}

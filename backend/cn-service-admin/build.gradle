@@ -1,0 +1,90 @@
+plugins {
+    id 'org.springframework.boot'
+    id 'io.spring.dependency-management'
+}
+
+apply from: rootProject.file('gradle/spring-boot-app.gradle')
+
+dependencies {
+    implementation project(':cn-common')
+    implementation project(':cn-timeseries-api')
+    runtimeOnly project(':cn-timeseries-greptime')
+
+    implementation 'org.springframework.boot:spring-boot-starter-aop'
+    implementation('org.springframework.boot:spring-boot-starter-web') {
+        exclude group: 'org.springframework.boot', module: 'spring-boot-starter-logging'
+    }
+
+    implementation "com.mysql:mysql-connector-j:${rootProject.ext.versions.mysql}"
+    implementation "com.baomidou:mybatis-plus-spring-boot3-starter:${rootProject.ext.versions.mybatisPlus}"
+    implementation "com.baomidou:mybatis-plus-jsqlparser:${rootProject.ext.versions.mybatisPlus}"
+    implementation "cn.dev33:sa-token-spring-boot3-starter:${rootProject.ext.versions.saToken}"
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+    implementation 'org.apache.commons:commons-pool2'
+    implementation "org.redisson:redisson-spring-boot-starter:${rootProject.ext.versions.redisson}"
+    implementation "com.github.ben-manes.caffeine:caffeine:${rootProject.ext.versions.caffeine}"
+    implementation "org.mapstruct:mapstruct:${rootProject.ext.versions.mapstruct}"
+    implementation 'org.springframework.security:spring-security-crypto'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+    // 规则保存前必须在受限环境编译候选脚本（detailed-design.md §二.1）；
+    // engine 禁止任何 HTTP 接口，admin 无法把编译请求转给它，故编译能力由共享的 cn-rule-sdk 提供。
+    implementation project(':cn-rule-sdk')
+
+    // 只用于保存 Kafka 输出定义时以 Admin 接口只读 describeTopics 确认 Topic 存在；
+    // 管理端禁止持有任何 consumer / producer。
+    implementation "org.apache.kafka:kafka-clients:${rootProject.ext.versions.kafka}"
+
+    annotationProcessor "io.github.davidricardo1026:easytrans-processor:${rootProject.ext.versions.easytrans}"
+    annotationProcessor "org.projectlombok:lombok:${rootProject.ext.versions.lombok}"
+    annotationProcessor "org.mapstruct:mapstruct-processor:${rootProject.ext.versions.mapstruct}"
+}
+
+if (findProject(':cn-rule-window-runtime') != null) {
+    dependencies {
+        runtimeOnly project(':cn-rule-window-runtime')
+    }
+}
+
+// ── 集成测试：独立 source set（src/integrationTest/java），与零 DB 单测（src/test/java）物理隔离 ──
+// gradle test 只见 src/test/java（天然零 DB）；gradle integrationTest 只见 src/integrationTest/java（需 docker）。
+sourceSets {
+    integrationTest {
+        // 复用 main 与 test 的产出（可用主代码 + 单测里的公共辅助）
+        compileClasspath += sourceSets.main.output + sourceSets.test.output
+        runtimeClasspath += sourceSets.main.output + sourceSets.test.output
+    }
+}
+
+configurations {
+    // 继承单测依赖（含 spring-boot-starter-test），再单独叠加 Testcontainers，避免其泄漏进零 DB 单测 classpath
+    integrationTestImplementation.extendsFrom testImplementation
+    integrationTestRuntimeOnly.extendsFrom testRuntimeOnly
+}
+
+dependencies {
+    // 集成测试专属：Testcontainers（临时 MySQL 容器；版本由 Spring Boot BOM 统一管理，无需硬编码）
+    integrationTestImplementation 'org.testcontainers:mysql'
+    integrationTestImplementation 'org.testcontainers:junit-jupiter'
+}
+
+tasks.named('bootJar') {
+    archiveBaseName = 'cn-service-admin'
+}
+
+// 集成测试建表脚本：构建期从 app/backend/sql（DDL 唯一真相源）拷进 integrationTest classpath，供 Testcontainers withInitScript 使用
+processIntegrationTestResources {
+    from("${rootProject.projectDir}/sql/schema-system.sql") {
+        into 'schema'
+    }
+}
+
+// 集成测试独立任务：需要本机 docker（Testcontainers 起临时 MySQL）
+tasks.register('integrationTest', Test) {
+    description = '运行集成测试（Testcontainers，需 docker）'
+    group = 'verification'
+    useJUnitPlatform()
+    testClassesDirs = sourceSets.integrationTest.output.classesDirs
+    classpath = sourceSets.integrationTest.runtimeClasspath
+    shouldRunAfter tasks.named('test')
+}

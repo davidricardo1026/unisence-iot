@@ -1,0 +1,96 @@
+// 规则运行时可执行工程：配置、日志、本地 run。
+//
+// 装配两轴：
+// 1. Community / 窗口都是项目优先，没有项目再用 libs 里对应 JAR。
+// 2. includeWindowRuntime 只决定要不要窗口：true 则必须有窗口项目或窗口 JAR；false 不要窗口。
+// -PincludeWindowRuntime=true  → 专业版启动（WindowRuleStreamLauncher）
+// 未设置或 false               → 开源版启动（RuleStreamLauncher）
+plugins {
+    id 'application'
+}
+
+def includeWindowRuntime = providers.gradleProperty('includeWindowRuntime').map { rawValue ->
+    def normalized = rawValue.trim().toLowerCase(Locale.ROOT)
+    if (normalized == 'true') {
+        return true
+    }
+    if (normalized == 'false') {
+        return false
+    }
+    throw new GradleException("includeWindowRuntime 只接受 true/false，实际值: ${rawValue}")
+}.orElse(false).get()
+def communityRuntimeProject = findProject(':cn-rule-runtime-community')
+def windowRuntimeProject = findProject(':cn-rule-window-runtime')
+def protectedRuntimeDirectory = rootProject.layout.projectDirectory.dir('libs')
+
+def libsJars = { String prefix ->
+    rootProject.fileTree(protectedRuntimeDirectory) {
+        include "${prefix}-*.jar"
+    }
+}
+
+application {
+    mainClass = includeWindowRuntime
+        ? 'com.unisence.iot.rulewindow.WindowRuleStreamLauncher'
+        : 'com.unisence.iot.rulestream.RuleStreamLauncher'
+}
+
+if (includeWindowRuntime) {
+    sourceSets {
+        main {
+            java {
+                srcDir 'src/professional/java'
+            }
+        }
+    }
+}
+
+dependencies {
+    implementation project(':cn-common-core')
+
+    def implementProjectOrJar = { Object runtimeProject, String jarPrefix, String missingMessage ->
+        if (runtimeProject != null) {
+            implementation project(runtimeProject.path)
+            return
+        }
+        def jars = libsJars(jarPrefix).files.toList().sort { it.name }
+        if (jars.isEmpty()) {
+            throw new GradleException(missingMessage)
+        }
+        if (jars.size() != 1) {
+            throw new GradleException(
+                "${jarPrefix} 文件依赖必须恰好一枚，实际找到 ${jars.size()} 枚: ${jars*.name}"
+            )
+        }
+        implementation rootProject.files(jars)
+    }
+
+    implementProjectOrJar(
+        communityRuntimeProject,
+        'cn-rule-runtime-community',
+        '未找到 :cn-rule-runtime-community 项目，且 backend/libs/ 中没有 cn-rule-runtime-community-*.jar'
+    )
+    if (communityRuntimeProject == null) {
+        runtimeOnly project(':cn-metadata-sync')
+        runtimeOnly "org.apache.kafka:kafka-clients:${rootProject.ext.versions.kafka}"
+        runtimeOnly "io.vertx:vertx-config:${rootProject.ext.versions.vertx}"
+        runtimeOnly "io.vertx:vertx-config-yaml:${rootProject.ext.versions.vertx}"
+        runtimeOnly "org.apache.groovy:groovy:${rootProject.ext.versions.groovy}"
+    }
+
+    if (includeWindowRuntime) {
+        implementProjectOrJar(
+            windowRuntimeProject,
+            'cn-rule-window-runtime',
+            'includeWindowRuntime=true：未找到 :cn-rule-window-runtime 项目，且 backend/libs/ 中没有 cn-rule-window-runtime-*.jar'
+        )
+    }
+}
+
+// 配置从工作目录读 application.yml；Log4j XML 仍走 classpath。
+tasks.named('run', JavaExec) {
+    workingDir = file('src/main/resources')
+    systemProperties System.getProperties().findAll { k, v ->
+        k.toString().startsWith('log4j2.') || k.toString() in ['service.name', 'log.dir', 'logging.config']
+    }
+}

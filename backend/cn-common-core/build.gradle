@@ -1,0 +1,14 @@
+// cn-common-core —— 零依赖叶子模块
+//
+// 存在的理由：cn-common 以 api 导出 spring-web / sa-token / mybatis-plus，后者又传递进
+// spring-boot-starter-jdbc + HikariCP。任何**非 Spring 模块**只要依赖 cn-common，就会连带吃进整个
+// Spring + JDBC 栈 —— cn-service-engine 此前仅为一个 MetaKeyEnum 付出了这个代价。
+//
+// 本模块只收纳 cn-common 中**零外部依赖**的部分（Result / PageResult / 字典 VO / 常量 / 工具类），
+// 由 cn-common 以 api 再导出，因此所有既有 import 路径不变（包名仍是 com.unisence.iot.common.*）。
+//
+// 红线：本模块**禁止**引入 Spring / MyBatis-Plus / Sa-Token / Vert.x / Kafka 的任何依赖。
+// 需要这些的类留在 cn-common。
+plugins {
+    id 'java-library'
+}

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Debian VM 联调与压测日志；运行特征与 dev 一致。 -->
+<Configuration status="WARN" shutdownHook="disable">
+    <Properties>
+        <Property name="LOG_DIR">${sys:log.dir:-./log}</Property>
+        <Property name="PATTERN">%d{HH:mm:ss.SSS} %highlight{%-5level} [%t] %logger{1.} - %msg%n%ex</Property>
+    </Properties>
+
+    <Appenders>
+        <Console name="Console" target="SYSTEM_OUT">
+            <PatternLayout charset="UTF-8" pattern="${PATTERN}"/>
+        </Console>
+        <RollingFile name="File" fileName="${LOG_DIR}/engine.log"
+                     filePattern="${LOG_DIR}/engine-%d{yyyy-MM-dd}-%i.log">
+            <PatternLayout charset="UTF-8" pattern="${PATTERN}"/>
+            <Policies>
+                <TimeBasedTriggeringPolicy/>
+                <SizeBasedTriggeringPolicy size="100 MB"/>
+            </Policies>
+            <DefaultRolloverStrategy max="20"/>
+        </RollingFile>
+    </Appenders>
+
+    <Loggers>
+        <Logger name="com.unisence.iot" level="INFO"/>
+        <Logger name="io.vertx" level="WARN"/>
+        <Logger name="org.apache.kafka" level="WARN"/>
+        <Logger name="io.greptime" level="WARN"/>
+        <Root level="INFO">
+            <AppenderRef ref="Console"/>
+            <AppenderRef ref="File"/>
+        </Root>
+    </Loggers>
+</Configuration>

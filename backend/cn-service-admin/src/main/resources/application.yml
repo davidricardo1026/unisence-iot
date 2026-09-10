@@ -1,0 +1,164 @@
+# 环境 profile 由 APP_PROFILE 驱动（两类服务共用同一环境变量，
+# 非 Spring 的 engine/rule-stream 也读它，见 architecture-features/logging-runtime.md §3.1）。
+# 本文件只放与环境无关的结构与默认值；端点、凭据与日志配置在 application-{profile}.yml。
+server:
+    port: 8080
+    servlet:
+        context-path: /api
+
+spring:
+    # 环境覆盖层由 APP_PROFILE 驱动。
+    # 非 Spring 的 engine/rule-stream 也读同一个变量（logging-runtime.md §3.1）
+    profiles:
+        active: ${APP_PROFILE:dev}
+    application:
+        name: cn-service-admin
+    servlet:
+        multipart:
+            max-file-size: 5MB
+            max-request-size: 6MB
+    cloud:
+        nacos:
+            discovery:
+                server-addr: ${NACOS_SERVER:localhost:8848}
+                namespace: ${NACOS_NAMESPACE:public}
+                group: ${NACOS_GROUP:DEFAULT_GROUP}
+                register-enabled: true
+                enabled: false
+    datasource:
+        driver-class-name: com.mysql.cj.jdbc.Driver
+        hikari:
+            minimum-idle: 5
+            maximum-pool-size: 20
+            idle-timeout: 30000
+            pool-name: cn-service-admin-pool
+            max-lifetime: 1800000
+            connection-timeout: 30000
+            connection-test-query: SELECT 1
+    data:
+        redis:
+            database: ${REDIS_DATABASE:6}
+            timeout: 10000ms
+
+mybatis-plus:
+    mapper-locations: classpath*:/mapper/**/*.xml
+    type-aliases-package: com.unisence.iot.**.entity
+    global-config:
+        db-config:
+            id-type: auto
+    configuration:
+        map-underscore-to-camel-case: true
+        cache-enabled: false
+
+app:
+    auth:
+        enabled-types:
+            - local
+        redis-key-prefix: "unisence:satoken:"
+    crypto:
+        field:
+            current-version: v1
+            keys:
+                # 测试阶段保留默认密钥；生产部署必须通过环境变量覆盖
+                v1: ${APP_CRYPTO_FIELD_KEYS_V1:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}
+    caffeine:
+        specs:
+            display-user: "maximumSize=1024,expireAfterWrite=10m"
+            display-user-code: "maximumSize=1024,expireAfterWrite=10m"
+            display-dept: "maximumSize=128,expireAfterWrite=10m"
+            display-role: "maximumSize=128,expireAfterWrite=10m"
+    cache:
+        key-prefix: unisence:cache
+        evict:
+            channel: unisence:cache:evict
+    async:
+        normal:
+            core-pool-size: 2
+            max-pool-size: 8
+            queue-capacity: 1024
+            thread-name-prefix: "normal-"
+        important:
+            core-pool-size: 4
+            max-pool-size: 32
+            queue-capacity: 10240
+            thread-name-prefix: "important-"
+    storage:
+        # 当前默认本地文件系统；后续接入 MinIO 适配器后可改为 minio。
+        type: local
+        local:
+            base-path: ${APP_STORAGE_LOCAL_BASE_PATH:./data/uploads/}
+    rule:
+        # 跨服务共享键空间：与 cn-service-engine 的同名块必须逐项一致。
+        # 值不一致时以 engine 为准 —— admin 放宽只会让规则保存成功却在运行时被拒。
+        # 定值依据：capacity-benchmark.md §二（2026-07-29 实测），逐项理由见 engine 侧同名块注释。
+        script:
+            max-filter-script-chars: 4000
+            max-output-script-chars: 8000
+            max-ast-nodes: 3000
+            filter-timeout-millis: 20
+            output-timeout-millis: 50
+            max-output-fields: 128
+            max-output-depth: 5
+            max-output-bytes: 8192
+        # 窗口容量边界，同为跨服务共享键空间；逐项理由见 engine 侧同名块注释。
+        window:
+            max-window-millis: 86400000
+            min-advance-millis: 10000
+            max-amplification: 12
+            max-grace-millis: 600000
+    metadata:
+        # 元数据同步总线 admin 侧（metadata-sync-bus.md §十二）。
+        # Redis 固定键不在此配置：admin 与 engine 两侧编译期对齐，避免配置漂移。
+        sync:
+            # 必须大于允许的 engine 最长连续失联时间，否则实例追平时会撞上日志缺口
+            change-retention-days: 7
+            # 按完整 commit_seq 批次清理；禁止用行数 LIMIT 切碎同一次提交
+            cleanup-commit-batch-size: 500
+            # 单次提交去重后 scope 数超过此值即坍缩为该域 scope_id=0 全域重建
+            full-rebuild-scope-threshold: 500
+
+    # Admin 侧统一时序数据库只读连接。端点与凭据在 application-{profile}.yml。
+    admin:
+        timeseries:
+            type: greptime
+            database: unisence_iot
+            pool-max-size: 4
+            connection-timeout-ms: 3000
+            write-timeout-ms: 30000
+            # 属性历史查询保护：7 天为固定上限，点数与原始值页大小统一在 R10.1 压测后定值
+            history-max-range-ms: 604800000
+            history-chart-max-points: 1000
+            property-raw-max-page-size: 100
+            # 事件查询保护：7 天为固定上限，页大小统一在 R10.1 压测后定值
+            event-query-max-range-ms: 604800000
+            event-query-max-page-size: 100
+            # 上下线历史查询保护：7 天为固定上限，页大小统一在 R10.1 压测后定值
+            online-log-query-max-range-ms: 604800000
+            online-log-query-max-page-size: 100
+            online-log-chart-max-points: 1000
+        # Kafka 输出定义保存期治理：只读 describeTopics 确认 Topic 存在；前缀白名单与禁止集合
+        # 必须与 engine（app.engine.route）、rule-stream（app.rule-stream.output.kafka）逐项一致。
+        rule-output:
+            kafka:
+                # 接入点在 application-{profile}.yml
+                describe-timeout-ms: 5000
+            allowed-topic-prefixes:
+                - iot.rule.
+                - iot.route.
+                - customer.
+            forbidden-topics:
+                - iot.raw.data
+                - iot.event
+                - iot.raw.dlq
+                - iot.rule.state.property.v1
+                - iot.rule.state.event.v1
+
+sa-token:
+    token-name: Authorization
+    token-prefix: Bearer
+    timeout: 86400
+    active-timeout: -1
+    is-concurrent: true
+    is-share: false
+    token-style: uuid
+    is-log: false

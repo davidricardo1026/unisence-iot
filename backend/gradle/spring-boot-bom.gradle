@@ -1,0 +1,13 @@
+ext {
+    set('springCloudVersion', rootProject.ext.versions.springCloud)
+    set('springCloudAlibabaVersion', rootProject.ext.versions.springCloudAlibaba)
+    set('log4j2.version', rootProject.ext.versions.log4j)
+}
+
+dependencyManagement {
+    imports {
+        mavenBom "org.springframework.boot:spring-boot-dependencies:${rootProject.ext.versions.springBoot}"
+        mavenBom "com.alibaba.cloud:spring-cloud-alibaba-dependencies:${springCloudAlibabaVersion}"
+        mavenBom "org.springframework.cloud:spring-cloud-dependencies:${springCloudVersion}"
+    }
+}

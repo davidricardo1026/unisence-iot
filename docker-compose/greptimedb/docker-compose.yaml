@@ -1,0 +1,35 @@
+services:
+  greptimedb:
+    image: greptime/greptimedb:v1.3.0-70470bafb-20260807-1786098766
+    container_name: greptimedb
+    hostname: greptimedb
+    command:
+      - standalone
+      - start
+      - --http-addr
+      - 0.0.0.0:4000
+      - --grpc-bind-addr
+      - 0.0.0.0:4001
+      - --mysql-addr
+      - 0.0.0.0:4002
+      - --postgres-addr
+      - 0.0.0.0:4003
+      - --data-home
+      - /var/lib/greptimedb
+    volumes:
+      - /home/ss/docker/data/greptimedb130/data:/var/lib/greptimedb
+    ports:
+      # HTTP API 与 Web Dashboard
+      - "4000:4000"
+      # Greptime gRPC 写入接口
+      - "4001:4001"
+      # MySQL 查询协议
+      - "4002:4002"
+      # PostgreSQL 查询协议
+      - "4003:4003"
+    networks:
+      - greptimedb-net
+
+networks:
+  greptimedb-net:
+    driver: bridge

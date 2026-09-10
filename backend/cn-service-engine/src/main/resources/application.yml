@@ -1,0 +1,300 @@
+# cn-service-engine 运行配置
+#
+# 本服务不是 Spring 应用：本文件由 EngineConfigLoader 经 Vert.x 官方 ConfigRetriever 加载
+# （file(yaml) → env → sys 顺序叠加覆盖），但键空间仍遵守 application-configuration.md ——
+# 项目自定义配置集中在唯一顶级块 app: 下，且可用同名环境变量覆盖
+# （点/短横线转下划线并大写，如 APP_ENGINE_TIMESERIES_PASSWORD）。
+#
+# 下列所有阈值都是**初值**，压测后按环境固化（engine-runtime-io.md 总则 4）。
+# 代码中不得出现任何性能相关字面量。
+app:
+    engine:
+        # 停机时等待 vertx.close()（全部 verticle 的 stop()）跑完的上限。
+        # 不等 → verticle 还在 stop 时 MySQL/Redis 已被关掉，在途任务撞上已关闭的客户端，
+        # 停机日志刷一片伪故障且实例状态摘不掉（vertx-pool-thread-affinity.md §3.4）；
+        # 无界等 → 某个 stop() 卡住就永不退出，只能等编排平台 SIGKILL。
+        # 初值 30000 待压测定值（delivery-backlog.md R10.1），部署时须 < 编排平台的
+        # terminationGracePeriodSeconds，否则超时逻辑还没走到就被 SIGKILL 了。
+        # Vert.x 线程池。**显式化而非沿用 Vert.x 默认**（与 rule-stream 的 replication-factor 同一理由）：
+        # engine 以 VIRTUAL_THREAD 部署且全仓无 executeBlocking，这两个池实测用量极低 ——
+        # 收紧到 1/1 后线程总数 179→143、吞吐无退化（hotpath-findings.md H15 第十轮）。
+        # **当前保持 Vert.x 默认值 20，不就地调优**：具体收到多少是阈值（R10.1），
+        # 且故障路径（连接重建、DNS 重解析）会用这两个池，收得过小会串行化且后果未测。
+        # 写在这里是为了让「20 是我们选的」而不是「Vert.x 恰好是 20」——
+        # 后者会在 Vert.x 升版改默认值时静默变化。
+        vertx:
+            worker-pool-size: 20
+            internal-blocking-pool-size: 20
+        shutdown-timeout-ms: 30000
+        crypto:
+            field:
+                current-version: v1
+                keys:
+                    # 必须与 Admin 的同版本密钥一致；生产通过环境变量覆盖。
+                    v1: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+        ingress:
+            # 存储链路消费组。规则 topology 使用独立的 application.id，两者各自直接订阅上行 Topic，
+            # 中间不再经 iot.normalized（message-idempotency-design.md §一）。
+            group-id: cn-service-engine-storage
+            # 事件链路独立消费组：两个 Topic 的 SLA 相反，合用一个 poll 循环会让遥测洪峰把事件顶在队尾
+            event-group-id: cn-service-engine-event
+            # 静态成员 ID：可选，多实例部署时按实例注入
+            # APP_ENGINE_INGRESS_GROUP_INSTANCE_ID，避免单机重启触发全组 stop-the-world rebalance
+            group-instance-id:
+            topics:
+                raw-data: iot.raw.data
+                event: iot.event
+                dlq: iot.raw.dlq
+            # 每条链路的**并行消费者数**：各自独立 poll 循环，同属一个消费组，
+            # Kafka 自动把分区分给它们。
+            #
+            # **为什么需要它**（hotpath-findings.md 第十七轮）：此前每条链路只有 1 个消费者，
+            # 48 个分区全部由一条 poll 线程串行消费。而 poll 循环是
+            # 「拉一批 → 写时序库 → 等写完 → 提交 offset」的严格串行 ——
+            # 时序库任何一次停顿都让全部 48 个分区一起停。
+            # IoTDB 基线实测：engine 仅用 0.59/32 核、写入池基本闲置，
+            # 即瓶颈不是资源而是「只有一条推进链路」。
+            #
+            # 多消费者**不改变任何正确性保证**：每个消费者各自遵守
+            # 「写成功才提交自己的 offset」，单分区顺序与设备顺序均不受影响。
+            #
+            # **4 是已实测定值**（2026-08-09，48 分区、积压排空法、60s 测窗）：
+            #   1→172416 · 2→292190 · 4→467281 · 8→488887 msg/s
+            # 即 1→4 提升 **+171%**，4→8 仅 +4.6%（该轮使用 IoTDB）。
+            # 生产端可持续上限随之由 ≈125000 → **≥350000 rps**。
+            #
+            # **上界受两头夹**：不超过分区数（超出的消费者拿不到分区、纯空转），
+            # 还受时序库侧分片/Region 数制约；切换 GreptimeDB 后须按 R10.1 重新压测，
+            # **改分区数或真实属性数后也须重测**（与 max-poll-records 同理）。
+            consumer-count: 4
+            poll:
+                # 批量 poll：攒批拉降低 RPC 次数（architecture-guide.md 轨道一）
+                #
+                # 2026-08-09 **由 500 调至 4000，这是本仓少数几个「已实测定值」的阈值**
+                # （48 分区、1900 万条积压排空法、35s 预热后测 30s，delivery-backlog.md R10.1）：
+                #   500→75676 · 2000→146406 · 4000→180433 · 16000→182910 msg/s
+                # 即 500→4000 提升 **+138%**，4000 之后饱和（16000 仅再 +1.4%）。
+                #
+                # 机理：一个 poll 批切成 ceil(记录数×属性数 ÷ batch-max-rows) 个 chunk 并行写时序库。
+                # 500 条 × 2 属性 = 1000 点 = 恰好 1 个 chunk ⇒ write-concurrency(8) 全程只用 1 个，
+                # poll 线程 72~79% 的时间在干等单线程写完（hotpath-findings.md 第五轮）。
+                # 4000 条 ⇒ 8 个 chunk ⇒ 8 个写入者真正并行。
+                #
+                # 安全边界已实测：单批处理耗时 12.6ms，对 max.poll.interval.ms(默认 300000ms)
+                # 余量约 2.4 万倍，远未逼近 rebalance 风险。
+                # **该值与 batch-max-rows、单条属性数强耦合**，改任一项都需重测（H13）。
+                max-records: 4000
+                timeout-ms: 500
+                fetch-min-bytes: 65536
+                fetch-max-wait-ms: 100
+            # 解码前的载荷大小闸门（detailed-design.md §一）
+            max-property-message-bytes: 262144
+            # 事件可携带较大 params，上限与属性分开配置
+            max-event-message-bytes: 1048576
+            # 无有效 offset（新消费组首次启动 / offset 过期）时的重置策略。
+            # 存储链路固定 earliest：latest 会静默跳过全部积压且无任何告警，
+            # 与「把所有遥测存进时序库」的语义直接冲突（engine-hotpath-optimization.md §七）。
+            # 解码为纯 CPU，已不再需要并发预算，原 processing-concurrency 一并删除（§五）
+            auto-offset-reset: earliest
+            # 单个建档事务的设备数上限。突发建档时按此切批，每批一次水位分配；
+            # 全批提交完只等一次元数据收敛（engine-hotpath-optimization.md §十）
+            # 2026-08-02 由 100 调至 200。**这是本仓少数几个「已有实测依据」的阈值**：
+            # A/B 实测 100/500/1000 三档吞吐为 3271/4340/4801 台/秒
+            # （capacity-benchmark.md §4.2quater）。500 收益最明显（+33%），
+            # 但幂等命中路径与批量导入收敛轮次均未测，且该值与 Kafka max-poll-records
+            # 耦合（批大小 500 时每批 115ms，需与 max.poll.interval.ms 余量同看），
+            # 故先保守取 200，最终定值仍随 R10 一次性回填
+            device-create-batch-size: 500
+            # 可重试故障（时序数据库连不上等）的退避基数与上限。
+            # 注意：这不是「重试多少次就放弃」——基础设施故障会一直重试到恢复，
+            # 分区期间停住并持续告警。确定性拒绝走的是逐条隔离进 DLQ，与此无关。
+            retry-backoff-ms: 1000
+            max-retry-backoff-ms: 30000
+
+        route:
+            allowed-topic-prefixes:
+                - iot.rule.
+                - iot.route.
+                - customer.
+            forbidden-topics:
+                - iot.raw.data
+                - iot.event
+                - iot.raw.dlq
+                - iot.rule.state.property.v1
+                - iot.rule.state.event.v1
+            linger-ms: 5
+            compression-type: lz4
+            request-timeout-ms: 30000
+            delivery-timeout-ms: 120000
+
+        # 统一时序存储；type 固定 greptime，由 SPI 加载 cn-timeseries-greptime。
+        timeseries:
+            type: greptime
+            database: unisence_iot
+            pool-max-size: 32
+            connection-timeout-ms: 3000
+            write-timeout-ms: 30000
+            write-max-retries: 3
+            max-in-flight-write-points: 655360
+            # 与上游 max-records 解耦，因为一条属性消息会展开成多行。
+            batch-max-rows: 1000
+            batch-max-bytes: 4194304
+            write-concurrency: 8
+            schema-sync-concurrency: 2
+
+        # -> vertx-mysql-client，非 JDBC，故无 jdbc-url（engine-runtime-io.md §四）
+        mysql:
+            database: unisence_iot
+            pool-max-size: 20
+            max-wait-queue-size: 200
+            connection-timeout-ms: 3000
+            idle-timeout-ms: 300000
+            # 少数几条 SQL 高频重复执行，预编译缓存收益最直接，必须开启
+            cache-prepared-statements: true
+            prepared-statement-cache-max-size: 256
+            batch-size: 500
+
+        # -> RedisOptions（engine-runtime-io.md §五）
+        redis:
+            pool-max-size: 16
+            max-pool-waiting: 64
+            max-waiting-handlers: 2048
+            # 单次 batch(List<Request>) 的命令数上限，须 ≤ max-waiting-handlers（启动期校验）。
+            # 不分片会把一个 poll 批的全部命令塞进一次往返，击穿在途处理器上限
+            pipeline-batch-size: 256
+
+        # 设备在线状态租约与判活（device-online-state-design.md §九）
+        online:
+            # 产品未配置 online_ttl_seconds 时的兜底值
+            default-ttl-seconds: 180
+            # 驱动实例租约；须 ≥ 驱动 service_heartbeat 周期的 2~3 倍
+            service-ttl-seconds: 90
+            # 判活扫描周期。离线判定的真实延迟 ≤ ttl + scan-interval
+            scan-interval-ms: 10000
+            scan-batch-size: 5000
+            # 每实例同时扫描的 online shard 上限（1~32）
+            scan-shard-concurrency: 8
+            # 扫描单活锁持有时长，必须大于单轮扫描最坏耗时
+            scan-lock-ttl-ms: 60000
+            # 续租节流：同一设备在该窗口内只真正续租一次。
+            # 硬约束 ≤ default-ttl-seconds*1000/3（启动期校验）——
+            # 节流会让离线判定提前，窗口过大将造成持续误判
+            renew-throttle-ms: 10000
+            renew-throttle-max-entries: 500000
+            renew-flush-batch-size: 500
+            renew-flush-delay-ms: 200
+            # 续租攒批器的**队列容量**，满时丢最旧一条续租。
+            #
+            # **禁止复用 max-pending-transitions-alert**（曾经的错误，2026-08-09 修正）：
+            # 后者是 transition PEL 的告警阈值，其注释写明「只告警/背压」，
+            # 两者定值依据互相矛盾 —— 告警阈值要略高于正常峰值，
+            # 队列容量要等于「排空速率 × 可容忍突发时长」。
+            # 当前排空速率 = renew-flush-batch-size / renew-flush-delay-ms = 500/200ms = 2500 条/秒。
+            #
+            # 初值 50000（= 20 秒排空量）待压测定值（R10.1）。
+            # 丢最旧的代价上限是一次误判离线，下条上行消息会拉回在线
+            renew-pending-max: 50000
+            # 跳变攒批。flush-delay-ms 须 ≤1000，否则 last_online_at 误差超出 datetime 秒精度
+            flush-batch-size: 500
+            flush-delay-ms: 500
+            # transition stream 消费与故障接管（device-online-state-design.md §九）
+            transition-read-batch-size: 500
+            transition-block-ms: 1000
+            # 必须大于 transition-block-ms，否则处理中的项会被别的实例反复抢走
+            transition-claim-idle-ms: 30000
+            transition-drain-shard-concurrency: 8
+            # 只告警/背压，禁止据此 trim 未 ACK 项
+            max-pending-transitions-alert: 50000
+
+        # 规则脚本限制（groovy-sdk-contract.md §九）。
+        # 与 cn-service-admin 的 app.rule.script.* 必须逐项一致；不一致时以本侧为准
+        rule:
+            # 定值依据：capacity-benchmark.md §二（2026-07-29 实测）。
+            # 与 cn-service-admin 的同名块必须逐项一致，不一致时以本文件为准。
+            script:
+                max-filter-script-chars: 4000
+                max-output-script-chars: 8000
+                # 3000 而非 2000：实测 AST 密度 0.26-0.29 节点/字符，
+                # 2000 会先于 max-output-script-chars 触发，让字符上限形同虚设
+                max-ast-nodes: 3000
+                # 失控探测器而非延迟预算：实测 p99 仅 0.9us / 14.6us，
+                # 最差单次 2.9ms 几乎全是 GC；向 p99 收紧只会把 GC 停顿变成规则失败
+                filter-timeout-millis: 20
+                output-timeout-millis: 50
+                # 128 字段管结构、8192 字节管体积，两者各有会先触发的场景；
+                # 原 64/16384 的组合中后者永不触发（128 个数值字段仅约 4.4KB）
+                max-output-fields: 128
+                max-output-depth: 5
+                max-output-bytes: 8192
+            # 窗口容量边界（capacity-benchmark.md §3.1）。这些量在保存时全部可算，
+            # 因此由 RuleConfigValidator 在 admin 侧就拒绝；放到运行时就成了
+            # 「RocksDB 撑爆才发现」，而那时受害的是同实例的其它规则。
+            window:
+                # 超过一天的累计属于报表，应查询时序数据库而非常驻窗口状态
+                max-window-millis: 86400000
+                min-advance-millis: 10000
+                # 一条消息同时落入的窗口数上界，直接等比放大状态与 changelog。
+                # 12 允许「1 小时窗口 / 5 分钟步长」，拒绝「1 小时 / 1 秒」（3600 倍）
+                max-amplification: 12
+                max-grace-millis: 600000
+
+        # 元数据同步总线（metadata-sync-bus.md §十二）。
+        # Redis 固定键与 L2 的 4096 桶数不在此配置：它们是键协议，两侧编译期对齐，
+        # 做成配置项只会产生 admin/engine 各改一半的静默漂移。
+        metadata:
+            # ── 触发源：快→慢、不可靠→可靠 ──
+            redis-head-probe-interval-ms: 5000
+            # 唯一不依赖 Redis 的发现路径，必须为正数、不可关闭
+            db-reconcile-interval-ms: 30000
+            # 按实例加独立随机抖动，避免整个集群同时查同一行 head
+            reconcile-jitter-ratio: 0.2
+            # 首个提示的合并等待
+            coalesce-delay-ms: 100
+            # 持续变化时的强制开始上限，防止收敛被无限推迟
+            max-coalesce-delay-ms: 1000
+            # 去重后 scope 数超过此值即转全量重建（此时增量已无收益）
+            max-incremental-scopes: 1000
+            retry-initial-delay-ms: 1000
+            retry-max-delay-ms: 30000
+            failure-alert-threshold: 3
+            # ── 实例状态（纯观测）──
+            instance-heartbeat-interval-ms: 10000
+            # 必须 > 心跳周期 3 倍，否则一次 GC 停顿就会让实例在 admin 视图里假死
+            instance-status-ttl-ms: 45000
+            # ── 小域保护上限：超限即保留 LKG，首次启动则不部署 Kafka ──
+            product-max-entries: 10000
+            thing-model-definition-max-entries: 200000
+            rule-max-entries: 10000
+            bootstrap-small-domain-max-bytes: 268435456
+            # ── 设备版本目录：256~4096 之间的 2 次幂 ──
+            device-catalog-shard-count: 1024
+            device-catalog-load-page-size: 5000
+            device-catalog-max-entries: 1500000
+            # Bloom 误判率，必须落在 (0, 0.01]
+            device-existence-fpp: 0.001
+            device-existence-delta-max-entries: 50000
+            device-existence-rebuild-interval-hours: 24
+            # ── 三级设备缓存：容量按热点而非设备总量规划 ──
+            # 权重预算按字节而非条目数：表单大小差异可达两个数量级。
+            # 1 GiB 按 100 万设备基线定（capacity-benchmark.md §5.6）：设备每 30s 上报一次
+            # 意味着「全部设备都是热点」，没有冷数据可淘汰，按单条投影 800B 计需 800MB 才能全量常驻。
+            # 原 256MiB 只装得下约 32%，其余每条消息都要一次 L2 往返
+            device-l1-max-weight-bytes: 1073741824
+            device-l1-expire-after-access-seconds: 900
+            device-cache-entry-max-bytes: 32768
+            device-l2-read-batch-size: 500
+            device-db-fallback-batch-size: 500
+            device-db-fallback-max-concurrency: 8
+            # 低水位必须小于高水位，否则暂停分区后永远达不到恢复条件
+            device-db-fallback-queue-high-watermark: 10000
+            device-db-fallback-queue-low-watermark: 5000
+            device-load-timeout-ms: 5000
+            # ── 未知设备修复：三层封顶避免它自己变成放大器 ──
+            unknown-device-cache-max-entries: 100000
+            unknown-device-cache-ttl-ms: 30000
+            # 16~1024 之间的 2 次幂
+            unknown-device-repair-stripes: 256
+            unknown-device-repair-max-concurrency: 8
+            # head 查询并发恒为 1，且该窗口内只查一次
+            unknown-device-head-probe-freshness-ms: 100
+            unknown-device-reconcile-timeout-ms: 5000

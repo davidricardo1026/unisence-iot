@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  admin —— **生产** 日志（architecture-features/logging-runtime.md §5）。
+  同时满足本地部署（看文件）与 k8s 部署（kubectl logs / stdout 采集）。
+
+  三条不可省：
+  1. **Console 必须保留** —— k8s 的日志采集依赖标准输出，关掉等于在 k8s 上瞎掉。
+     但不打彩色：转义字符会污染采集到的文本；
+  2. **滚动三件套** —— 单文件大小 + 按天 + Delete（文件数/总量/保留天数）。
+     只设 max 文件数挡不住单文件失控，容器根盘只有几 GB，没有总量上限就是定时炸弹；
+  3. **ERROR 单独一份** —— 出事先看它，不必在几百 MB 主日志里捞。
+
+  日志目录用可覆盖的系统属性，**不写死绝对路径**：本地部署与容器的可写位置不同，
+  写死会造成「启动即失败且原因是日志目录不可写」这种极难排查的故障。
+  k8s 上挂 emptyDir 或日志卷到 log.dir 即可。
+-->
+<Configuration status="WARN">
+    <Properties>
+        <Property name="LOG_DIR">${sys:log.dir:-./log}</Property>
+        <!-- 无彩色；同样禁用 %L/%M/%C/%F（§2.1） -->
+        <Property name="PATTERN">%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%t] %logger - %msg%n%ex</Property>
+    </Properties>
+
+    <Appenders>
+        <Console name="Console" target="SYSTEM_OUT">
+            <PatternLayout charset="UTF-8" pattern="${PATTERN}"/>
+        </Console>
+
+        <RollingFile name="File" fileName="${LOG_DIR}/admin.log"
+                     filePattern="${LOG_DIR}/admin-%d{yyyy-MM-dd}-%i.log.gz">
+            <PatternLayout charset="UTF-8" pattern="${PATTERN}"/>
+            <Policies>
+                <TimeBasedTriggeringPolicy/>
+                <SizeBasedTriggeringPolicy size="100 MB"/>
+            </Policies>
+            <DefaultRolloverStrategy max="30">
+                <Delete basePath="${LOG_DIR}" maxDepth="1">
+                    <IfFileName glob="admin-*.log.gz">
+                        <!-- 三个条件是「或」：任一满足即删，防止单一维度失效时爆盘 -->
+                        <IfLastModified age="P30D"/>
+                        <IfAccumulatedFileSize exceeds="10 GB"/>
+                        <IfAccumulatedFileCount exceeds="30"/>
+                    </IfFileName>
+                </Delete>
+            </DefaultRolloverStrategy>
+        </RollingFile>
+
+        <RollingFile name="ErrorFile" fileName="${LOG_DIR}/admin-error.log"
+                     filePattern="${LOG_DIR}/admin-error-%d{yyyy-MM-dd}-%i.log.gz">
+            <ThresholdFilter level="ERROR" onMatch="ACCEPT" onMismatch="DENY"/>
+            <PatternLayout charset="UTF-8" pattern="${PATTERN}"/>
+            <Policies>
+                <TimeBasedTriggeringPolicy/>
+                <SizeBasedTriggeringPolicy size="50 MB"/>
+            </Policies>
+            <DefaultRolloverStrategy max="30">
+                <Delete basePath="${LOG_DIR}" maxDepth="1">
+                    <IfFileName glob="admin-error-*.log.gz">
+                        <IfLastModified age="P90D"/>
+                        <IfAccumulatedFileSize exceeds="2 GB"/>
+                    </IfFileName>
+                </Delete>
+            </DefaultRolloverStrategy>
+        </RollingFile>
+    </Appenders>
+
+    <Loggers>
+        <Logger name="com.unisence.iot" level="INFO"/>
+        <Logger name="org.springframework" level="WARN"/>
+        <Logger name="com.baomidou" level="WARN"/>
+        <Logger name="com.alibaba.nacos" level="WARN"/>
+
+        <Root level="INFO">
+            <AppenderRef ref="Console"/>
+            <AppenderRef ref="File"/>
+            <AppenderRef ref="ErrorFile"/>
+        </Root>
+    </Loggers>
+</Configuration>

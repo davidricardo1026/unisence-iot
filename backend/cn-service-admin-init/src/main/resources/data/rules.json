@@ -1,0 +1,110 @@
+{
+  "kafkaOutputs": [
+    {
+      "outputCode": "system-kafka-default",
+      "outputName": "默认规则输出",
+      "purpose": "RULE_OUTPUT",
+      "targetTopic": "iot.rule.output",
+      "format": "MESSAGEPACK"
+    },
+    {
+      "outputCode": "system-kafka-route",
+      "outputName": "属性透传输出",
+      "purpose": "ROUTE",
+      "targetTopic": "iot.route.property",
+      "format": "MESSAGEPACK"
+    }
+  ],
+  "routeRules": [
+    {
+      "ruleCode": "lt_route_property",
+      "ruleName": "属性透传路由",
+      "messageType": "property",
+      "productKeys": [
+        "syt57v"
+      ],
+      "kafkaOutputIds": [
+        "system-kafka-route"
+      ]
+    }
+  ],
+  "instantRules": [
+    {
+      "ruleCode": "lt_inst_temp",
+      "ruleName": "即时温度规则",
+      "messageType": "property",
+      "productKeys": [
+        "syt57v"
+      ],
+      "listenerConfig": {
+        "identifiers": [
+          "temperature"
+        ]
+      },
+      "valueConfig": {
+        "valueIdentifier": "temperature",
+        "valueSource": "PROPERTY"
+      },
+      "filterScript": "return true",
+      "errorPolicy": "DLQ_MESSAGE",
+      "emitMode": "LEVEL_TRANSITION",
+      "levels": [
+        {
+          "levelCode": "HIGH",
+          "severity": 10,
+          "conditionKind": "THRESHOLD",
+          "thresholdConfig": {
+            "operator": "GT",
+            "threshold": 50.0
+          },
+          "outputScript": "return [kind:'instant_property', device:ctx.deviceCode(), value:ctx.numberValue('temperature'), recovered:trigger.recovered()]",
+          "kafkaOutputIds": [
+            "system-kafka-default"
+          ]
+        }
+      ]
+    }
+  ],
+  "windowRules": [
+    {
+      "ruleCode": "lt_win_event_count",
+      "ruleName": "窗口事件计数规则",
+      "messageType": "event",
+      "productKeys": [
+        "syt57v"
+      ],
+      "listenerConfig": {
+        "identifiers": [
+          "temperature_alarm"
+        ]
+      },
+      "windowConfig": {
+        "type": "TUMBLING_TIME",
+        "timeMode": "PROCESSING_TIME",
+        "sizeMillis": 10000,
+        "retentionMillis": 10000,
+        "stateScope": "DEVICE"
+      },
+      "aggregateConfig": {
+        "type": "COUNT"
+      },
+      "filterScript": "return true",
+      "errorPolicy": "DLQ_MESSAGE",
+      "levels": [
+        {
+          "levelCode": "BUSY",
+          "severity": 10,
+          "conditionKind": "THRESHOLD",
+          "thresholdConfig": {
+            "operator": "GT",
+            "threshold": 3.0
+          },
+          "outputScript": "return [kind:'window_event', device:ctx.deviceCode(), count:trigger.count(), recovered:trigger.recovered()]",
+          "kafkaOutputIds": [
+            "system-kafka-default"
+          ]
+        }
+      ]
+    }
+  ]
+}

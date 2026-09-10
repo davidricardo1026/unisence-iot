@@ -1,0 +1,23 @@
+# 统一感知平台编码约定（由 Spring Boot 应用 spring.config.import 引入）
+spring:
+    mandatory-file-encoding: UTF-8
+    messages:
+        encoding: UTF-8
+    kafka:
+        producer:
+            properties:
+                key.serializer.encoding: UTF-8
+                value.serializer.encoding: UTF-8
+        consumer:
+            properties:
+                key.deserializer.encoding: UTF-8
+                value.deserializer.encoding: UTF-8
+
+server:
+    servlet:
+        encoding:
+            charset: UTF-8
+            enabled: true
+            force: true
+            force-request: true
+            force-response: true

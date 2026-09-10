@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  admin —— **开发/联调** 日志（architecture-features/logging-runtime.md §4）。
+  目标是好用，不追求生产级严谨：Console 为主，文件不设保留上限
+  （开发机上日志被删是小事，翻不到才是大事）。
+
+  全局异步无锁由 log4j2.component.properties 的 AsyncLoggerContextSelector 提供，
+  因此这里的 appender **不需要再包 <Async>** —— 整个 logger 调用已在 Disruptor 上。
+
+  压测时若要让日志绝不阻塞业务线程，追加 -Dlog4j2.asyncQueueFullPolicy=Discard
+  （丢弃 INFO 及以下）。生产**不要**这么做，见 §4.3。
+-->
+<Configuration status="WARN">
+    <Properties>
+        <Property name="LOG_DIR">${sys:log.dir:-./log}</Property>
+        <!-- 刻意不含 %L/%M/%C/%F：异步下捕获调用位置要同步做栈回溯（§2.1） -->
+        <Property name="PATTERN">%d{HH:mm:ss.SSS} %highlight{%-5level} [%t] %logger{1.} - %msg%n%ex</Property>
+    </Properties>
+
+    <Appenders>
+        <Console name="Console" target="SYSTEM_OUT">
+            <PatternLayout charset="UTF-8" pattern="${PATTERN}"/>
+        </Console>
+
+        <RollingFile name="File" fileName="${LOG_DIR}/admin.log"
+                     filePattern="${LOG_DIR}/admin-%d{yyyy-MM-dd}-%i.log">
+            <PatternLayout charset="UTF-8" pattern="${PATTERN}"/>
+            <Policies>
+                <TimeBasedTriggeringPolicy/>
+                <SizeBasedTriggeringPolicy size="100 MB"/>
+            </Policies>
+            <!-- dev 刻意不配 Delete：开发机上翻不到历史日志比占盘更麻烦 -->
+            <DefaultRolloverStrategy max="20"/>
+        </RollingFile>
+    </Appenders>
+
+    <Loggers>
+        <Logger name="com.unisence.iot" level="INFO"/>
+        <Logger name="org.springframework" level="WARN"/>
+        <Logger name="com.baomidou" level="WARN"/>
+        <Logger name="com.alibaba.nacos" level="WARN"/>
+
+        <Root level="INFO">
+            <AppenderRef ref="Console"/>
+            <AppenderRef ref="File"/>
+        </Root>
+    </Loggers>
+</Configuration>

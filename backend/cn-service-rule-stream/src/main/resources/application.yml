@@ -1,0 +1,162 @@
+# cn-service-rule-stream 运行配置
+#
+# 本服务不是 Spring 应用：本文件由 RuleStreamConfigLoader 经 Vert.x 官方 ConfigRetriever 加载
+# （file(yaml) → env → sys 顺序叠加覆盖），键空间遵守 application-configuration.md ——
+# 项目自定义配置集中在唯一顶级块 app: 下，可用同名环境变量覆盖
+# （点/短横线转下划线并大写，如 APP_RULE_STREAM_MYSQL_PASSWORD）。
+#
+# 容量取值依据：capacity-benchmark.md §五（100 万设备推导基线，**未经集群实测**）。
+app:
+    rule-stream:
+        streams:
+            # 独立消费组；v5 是显式 state Topic key/value 布局版本。
+            group-id: cn-service-rule-stream-v5
+            # 每个 worker 的 transactional.id 会追加稳定实例名与 worker 序号。
+            transactional-id-prefix: cn-service-rule-stream-v5
+            # 可选；默认取 HOSTNAME。单宿主机启动多个实例时必须分别用环境变量显式覆盖，禁止 ID 冲突。
+            # instance-id: rule-stream-0
+            # 一个 worker = 一组 Consumer + Transactional Producer + 分区内存状态。
+            worker-count: 4
+            # Kafka 单次 poll 上限；应用事务可在有界等待内吸收多个 poll，统一在 R10.1 定值。
+            max-poll-records: 4000
+            poll-timeout-ms: 50
+            # Kafka 底层 fetch 聚合边界。max-poll-records 不控制 fetch；默认 min=1 会造成持续流量下小包频繁返回。
+            # 64KiB/10ms 只作为 R10.1 联合压测初值，10ms 留在 20ms 应用批延迟预算内。
+            fetch-min-bytes: 65536
+            fetch-max-wait-ms: 10
+            # 多维度共同关闭微批，避免极端大报文/高写放大规则把一个事务撑到不可控。
+            max-batch-bytes: 16777216
+            max-dirty-keys: 20000
+            max-output-bytes: 16777216
+            # 首条记录到 flush 的最大合并等待；只是初值，不是压测结论。
+            max-batch-linger-ms: 20
+            # 真实 Kafka transaction（begin 到 commit/abort）的观测与告警边界，不包含收集等待。
+            max-transaction-duration-ms: 1000
+            # 只控制业务指标从原始字段批量发布，不控制 Kafka 事务提交。
+            metrics-publish-interval-ms: 200
+            topics:
+                # 与存储链路订阅同样的上行 Topic，中间不经 iot.normalized
+                input:
+                    - iot.raw.data
+                    - iot.event
+                # 与 input 按顺序一一对应；分区数必须完全一致，且 cleanup.policy 必须含 compact。
+                state:
+                    - iot.rule.state.property.v1
+                    - iot.rule.state.event.v1
+                dlq: iot.raw.dlq
+            # 与存储链路同口径的载荷闸门；事件可携带较大 params，故与属性分开
+            max-property-message-bytes: 262144
+            max-event-message-bytes: 1048576
+
+        # 规则输出的 Kafka 边界。精确 Topic 与编码来自档位绑定的输出定义，不在此配置。
+        output:
+            kafka:
+                allowed-topic-prefixes:
+                    - iot.rule.
+                    - iot.route.
+                    - customer.
+                forbidden-topics:
+                    - iot.raw.data
+                    - iot.event
+                    - iot.raw.dlq
+                    - iot.rule.state.property.v1
+                    - iot.rule.state.event.v1
+                header-whitelist:
+                    - correlationId
+                retry-backoff-ms: 100
+                request-timeout-ms: 30000
+                delivery-timeout-ms: 120000
+
+        # 设备消息流 sequence 去重。状态按设备而非按消息增长，并由 changelog 持久化。
+        sequence:
+            # 初值，待 R10.1 按真实乱序距离、retained heap、GC 与 restore 集中定值。
+            # 必须为 64 的正整数倍；越界消息进入明确 DLQ，禁止静默污染窗口。
+            replay-window-bits: 1024
+
+        # 窗口状态的运行期治理（与 app.rule.window.* 职责不同：
+        # 那一组管「什么规则能存进来」，这一组管「已存进来的怎么被收割」）
+        window:
+            # 收割轮询周期。它只是**延迟的量化误差**，不是延迟本身：
+            # 判档与输出发生在收割那一刻，而收割时刻是 windowEnd + grace + orphan-grace-ms
+            # （WindowKeys.expireAt），因此窗口告警的实际延迟为
+            #   windowEnd + grace + orphan-grace-ms + [0, punctuate-interval-ms)
+            # 2026-08-04 实测 60s 滚动窗口（PROCESSING_TIME、grace=0）约 windowEnd 之后 60.4s，
+            # 与 alert-scenario-catalog.md §2「约 65 秒」一致
+            punctuate-interval-ms: 1000
+            # 必须封顶：积压时一次收割几十万个窗口会长时间占住 rule worker，
+            # 表现为消费停顿甚至被判死出组，把状态问题放大成可用性问题
+            max-windows-per-punctuate: 5000
+            # 给迟到数据留的余量。**同时决定判档时刻**：结算与物理删除共用这一个定时器
+            # （RuleProcessor.registerTimer → closeExpiredWindows → settleWindow），
+            # 因此调大它会等量放大窗口告警延迟，不只是多占一会儿状态
+            orphan-grace-ms: 60000
+
+        # 与 cn-service-admin / cn-service-engine 的 app.rule.script.* 必须逐项一致；
+        # 不一致时以 engine 为准。定值依据：capacity-benchmark.md §二
+        rule:
+            script:
+                max-filter-script-chars: 4000
+                max-output-script-chars: 8000
+                max-ast-nodes: 3000
+                filter-timeout-millis: 20
+                output-timeout-millis: 50
+                max-output-fields: 128
+                max-output-depth: 5
+                max-output-bytes: 8192
+
+        mysql:
+            database: unisence_iot
+            pool-max-size: 10
+
+        redis:
+            pool-max-size: 8
+            # 同时在途的响应处理器上限；显式给出而非依赖客户端默认，
+            # 因为它是 pipeline-batch-size 的校验基准
+            max-waiting-handlers: 2048
+            # 单次 batch(List<Request>) 的命令数上限，须 ≤ max-waiting-handlers（启动期校验）。
+            # 语义同 app.engine.redis.pipeline-batch-size，但允许取不同值 ——
+            # 规则链路与存储链路的设备热点分布并不一致
+            pipeline-batch-size: 256
+
+        # 元数据同步总线（metadata-sync-bus.md §十二）。
+        # 字段与 app.engine.metadata.* 同名同义，但**允许取不同值** ——
+        # 规则链路的设备热点分布与存储链路并不一致
+        metadata:
+            redis-head-probe-interval-ms: 5000
+            db-reconcile-interval-ms: 30000
+            reconcile-jitter-ratio: 0.2
+            coalesce-delay-ms: 100
+            max-coalesce-delay-ms: 1000
+            max-incremental-scopes: 1000
+            retry-initial-delay-ms: 1000
+            retry-max-delay-ms: 30000
+            failure-alert-threshold: 3
+            instance-heartbeat-interval-ms: 10000
+            instance-status-ttl-ms: 45000
+            product-max-entries: 10000
+            thing-model-definition-max-entries: 200000
+            rule-max-entries: 10000
+            bootstrap-small-domain-max-bytes: 268435456
+            device-catalog-shard-count: 1024
+            device-catalog-load-page-size: 5000
+            device-catalog-max-entries: 1500000
+            device-existence-fpp: 0.001
+            device-existence-delta-max-entries: 50000
+            device-existence-rebuild-interval-hours: 24
+            # 规则链路只解析「有候选规则的产品」下的设备，热点集合小于存储链路，
+            # 因此取 512MiB 而非 engine 的 1GiB —— 这正是两侧允许取不同值的意义
+            device-l1-max-weight-bytes: 536870912
+            device-l1-expire-after-access-seconds: 900
+            device-cache-entry-max-bytes: 32768
+            device-l2-read-batch-size: 500
+            device-db-fallback-batch-size: 500
+            device-db-fallback-max-concurrency: 8
+            device-db-fallback-queue-high-watermark: 10000
+            device-db-fallback-queue-low-watermark: 5000
+            device-load-timeout-ms: 5000
+            unknown-device-cache-max-entries: 100000
+            unknown-device-cache-ttl-ms: 30000
+            unknown-device-repair-stripes: 256
+            unknown-device-repair-max-concurrency: 8
+            unknown-device-head-probe-freshness-ms: 100
+            unknown-device-reconcile-timeout-ms: 5000

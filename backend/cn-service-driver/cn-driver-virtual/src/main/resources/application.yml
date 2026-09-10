@@ -1,0 +1,115 @@
+# 环境 profile 由 APP_PROFILE 驱动（两类服务共用同一环境变量，
+# 非 Spring 的 engine/rule-stream 也读它，见 architecture-features/logging-runtime.md §3.1）。
+# 本文件只放与环境无关的结构与默认值；端点、凭据与日志配置在 application-{profile}.yml。
+spring:
+    # 环境覆盖层由 APP_PROFILE 驱动。
+    # 非 Spring 的 engine/rule-stream 也读同一个变量（logging-runtime.md §3.1）
+    profiles:
+        active: ${APP_PROFILE:dev}
+    application:
+        name: cn-driver-virtual
+    kafka:
+        producer:
+            key-serializer: org.apache.kafka.common.serialization.StringSerializer
+            value-serializer: org.apache.kafka.common.serialization.ByteArraySerializer
+            acks: all
+            properties:
+                enable.idempotence: true
+        properties:
+            spring.json.add.type.headers: false
+    cloud:
+        nacos:
+            config:
+                # 虚拟驱动默认不接入配置中心；需要时同时设置 NACOS_CONFIG_ENABLED=true
+                # 与 SPRING_CONFIG_IMPORT=optional:nacos:cn-driver-virtual.yml?group=DEFAULT_GROUP
+                enabled: ${NACOS_CONFIG_ENABLED:false}
+            discovery:
+                # 测试驱动默认不注册服务；如需发现能力再显式开启。
+                enabled: ${NACOS_DISCOVERY_ENABLED:false}
+                register-enabled: ${NACOS_DISCOVERY_ENABLED:false}
+
+server:
+    # 驱动是 Web 应用；本地默认避开 admin 的 8080，部署时按实例覆盖。
+    port: ${SERVER_PORT:8081}
+
+app:
+    driver:
+        kafka:
+            raw-data-topic: iot.raw.data
+            event-topic: iot.event
+        virtual:
+            enabled: true
+            environment: TEST
+            source: cn-driver-virtual
+            initial-delay: 1s
+            # 压测负载模式（driver-runtime-design.md §十）。
+            # enabled=true 时**完全忽略下方 devices[]**，两种模式互斥。
+            # 场次矩阵见 capacity-benchmark.md §4.2；下面是场次 A（基线）的取值，
+            # 场次 E（倾斜）改 hot-device-count: 1 + hot-device-share: 0.3 即可。
+            load:
+                enabled: ${LOAD_ENABLED:false}
+                product-key: ${LOAD_PRODUCT_KEY:syt57v}
+                device-count: ${LOAD_DEVICE_COUNT:100000}
+                device-code-prefix: ${LOAD_DEVICE_PREFIX:dev-}
+                property-count: 1
+                # 逗号分隔；压**已有产品**时必须设成该产品物模型里的真实标识符，
+                # 否则生成的 propN 会被 engine 的物模型校验整条拒掉
+                property-identifiers: ${LOAD_PROPERTY_IDENTIFIERS:temperature}
+                # 事件负载：默认 0 即纯属性，与既有全部压测结论口径一致。
+                # 开启前必须同时配 event-identifiers，且必须是该产品物模型里的真实事件标识符
+                event-ratio: ${LOAD_EVENT_RATIO:0}
+                event-identifiers: ${LOAD_EVENT_IDENTIFIERS:temperature_alarm}
+                # 格式 event1:p1|p2,event2:p3 —— 必须与物模型声明的参数标识符一致
+                event-params: ${LOAD_EVENT_PARAMS:temperature_alarm:value}
+                # 设备心跳占比：与属性/事件走同一 renew 路径，主要用于覆盖
+                # 「没有业务数据时的保底活性信号」这条语义
+                device-heartbeat-ratio: ${LOAD_DEVICE_HEARTBEAT_RATIO:0}
+                # 服务心跳（驱动实例租约）周期，0 = 不发。
+                # 契约要求 service-ttl-seconds(90) ≥ 该周期的 2~3 倍
+                service-heartbeat-interval: ${LOAD_SERVICE_HEARTBEAT_INTERVAL:0s}
+                property-min: ${LOAD_PROPERTY_MIN:0}
+                property-max: ${LOAD_PROPERTY_MAX:100}
+                property-scale: 2
+                target-rps: ${LOAD_TARGET_RPS:20000}
+                # 发送线程数；速率在其间均分，各自按绝对时间基准推进
+                publisher-threads: ${LOAD_THREADS:8}
+                # 未完成 future 上限，达到即阻塞发送线程。
+                # 这是**背压**不是丢弃：Kafka 慢下来时实际 rps 会掉，那正是要观测的现象
+                max-in-flight: 20000
+                # 预热期样本不进分位：首发含元数据拉取与连接建立
+                warmup: ${LOAD_WARMUP:30s}
+                # 0 = 不限时长，直到进程停止
+                duration: ${LOAD_DURATION:0}
+                report-interval: 10s
+                # 0 = 均匀分布；场次 E 用 1 + 0.3 构造「单设备占 30% 流量」
+                hot-device-count: 0
+                hot-device-share: 0
+                # 建档 formData：必须覆盖产品 device_form_schema 的全部必填字段，
+                # 否则建档整批进 DLQ（reason=必填字段缺失: xxx），属性再因设备不存在二次进 DLQ
+                form-data:
+                    area: ${LOAD_FORM_AREA:tank-a}
+                provision:
+                    # 压属性前先批量建档。**不要关**：未建档设备的属性会被 engine 丢弃、
+                    # 被 rule-stream 投 DLQ，测的是丢弃路径而非规则链路
+                    enabled: true
+                    rps: ${LOAD_PROVISION_RPS:2000}
+                    settle-wait: ${LOAD_SETTLE_WAIT:30s}
+            devices:
+                -   enabled: true
+                    product-key: syt57v
+                    device-code: tank-01
+                    device-name: 罐区温度 01
+                    node-type: DIRECT
+                    form-data:
+                        area: tank-a
+                    property-interval: 5s
+                    properties:
+                        temperature:
+                            min: 55
+                            max: 85
+                            scale: 1
+                    event-interval: 2s
+                    events:
+                        -   identifier: temperature_alarm
+                            params:
+                                value: "75.0"

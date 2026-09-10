@@ -1,0 +1,22 @@
+plugins {
+    id 'java-library'
+}
+
+// 上行消息模型：南向驱动 → Kafka → 北向消费方之间唯一的类型化消息契约。
+//
+// 为什么是独立模块（依赖图见契约 §一）：
+//   消费方是 cn-driver-common（构造发布）、cn-service-engine（解码消费）与 cn-rule-sdk
+//   （MessageType 是 us_iot_rule.message_type 与 ListenerConfig 的取值域真相源）三家。
+//   1. 放 cn-common 不行：cn-common 以 api 导出 spring-web/sa-token/mybatis-plus，
+//      cn-rule-sdk 依赖它就会连带吃进整个 Spring，违反其「禁止 Spring」红线；
+//   2. 放 cn-rule-sdk 不行：Groovy 是它的 implementation 依赖，cn-driver-* 依赖它
+//      就会在运行期拿到 Groovy，违反「cn-driver-* 不得依赖 cn-rule-sdk」。
+//
+// 本模块零业务依赖：构造器只做结构性校验，看不到物模型与产品配置（契约 §六）。
+dependencies {
+    // 仅 message.codec 子包需要；implementation 而非 api，
+    // 消费方编译期看不见 msgpack API，避免各驱动绕过 MessageCodec 自己拼字节。
+    implementation "org.msgpack:msgpack-core:${rootProject.ext.versions.msgpack}"
+
+    testImplementation "org.msgpack:msgpack-core:${rootProject.ext.versions.msgpack}"
+}

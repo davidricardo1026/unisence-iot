@@ -1,0 +1,8 @@
+plugins {
+    id 'java-library'
+}
+
+dependencies {
+    // EventParamValue / EventTableColumn 使用 PropertyDataType，禁止在本模块再复制一份 dataType 枚举。
+    api project(':cn-rule-sdk')
+}

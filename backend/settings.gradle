@@ -1,0 +1,63 @@
+pluginManagement {
+    repositories {
+        maven { url = uri('https://maven.aliyun.com/repository/gradle-plugin') }
+        maven { url = uri('https://maven.aliyun.com/repository/public') }
+        maven { url = uri('https://maven.aliyun.com/repository/spring') }
+    }
+    plugins {
+        id 'org.springframework.boot' version "${springBootVersion}"
+        id 'io.spring.dependency-management' version "${springDependencyManagementVersion}"
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        maven { url = uri('https://maven.aliyun.com/repository/public') }
+        maven { url = uri('https://maven.aliyun.com/repository/spring') }
+        maven { url = uri('https://maven.aliyun.com/repository/google') }
+        mavenCentral()
+    }
+}
+
+rootProject.name = 'unisence-back'
+
+include 'cn-common-core'
+include 'cn-common'
+include 'cn-iot-message'
+include 'cn-rule-sdk'
+include 'cn-metadata-sync'
+include 'cn-timeseries-api'
+include 'cn-timeseries-greptime'
+include 'cn-service-admin'
+include 'cn-service-admin-init'
+include 'cn-service-engine'
+
+// 可选规则运行时模块：目录未安装时，其余模块仍可独立构建。
+def includeCommunityRuntime = file('cn-rule-runtime-community').isDirectory()
+if (includeCommunityRuntime) {
+    include 'cn-rule-runtime-community'
+}
+// 可选规则流服务仅在对应工程已安装时加入构建。
+if (file('cn-service-rule-stream').isDirectory()) {
+    include 'cn-service-rule-stream'
+}
+def includeWindowRuntimeValue = providers.gradleProperty('includeWindowRuntime').getOrElse('false')
+if (includeWindowRuntimeValue != 'true' && includeWindowRuntimeValue != 'false') {
+    throw new GradleException(
+        "includeWindowRuntime 只能是 true 或 false, 实际=${includeWindowRuntimeValue}"
+    )
+}
+def includeWindowRuntime = includeWindowRuntimeValue.toBoolean()
+// includeWindowRuntime 启用窗口能力；对应工程已安装时加入构建。
+if (includeWindowRuntime && file('cn-rule-window-runtime').isDirectory()) {
+    include 'cn-rule-window-runtime'
+}
+include 'cn-service-driver:cn-driver-common'
+include 'cn-service-driver:cn-driver-virtual'
+// 可选协议驱动：仅目录存在时 include。缺少目录时构建仍成立。
+['cn-driver-mqtt', 'cn-driver-modbus', 'cn-driver-opcua'].each { name ->
+    if (file("cn-service-driver/${name}").isDirectory()) {
+        include "cn-service-driver:${name}"
+    }
+}

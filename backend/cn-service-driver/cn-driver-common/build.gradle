@@ -1,0 +1,24 @@
+plugins {
+    id 'java-library'
+    id 'io.spring.dependency-management'
+}
+
+apply from: rootProject.file('gradle/spring-boot-bom.gradle')
+
+dependencies {
+    // 上行消息模型：DeviceDataPublisher 的公开签名收 IotMessage，各驱动编译期必须看得见
+    api project(':cn-iot-message')
+
+    api('org.springframework.boot:spring-boot-starter') {
+        exclude group: 'org.springframework.boot', module: 'spring-boot-starter-logging'
+    }
+    // 所有驱动都是独立 Web 应用；Web Server 能力统一由 driver-common 提供，
+    // 避免每个协议驱动重复声明或因只引入 spring-web 而缺少 ServletWebServerFactory。
+    api('org.springframework.boot:spring-boot-starter-web') {
+        exclude group: 'org.springframework.boot', module: 'spring-boot-starter-logging'
+    }
+    api 'org.springframework.boot:spring-boot-starter-log4j2'
+    api('org.springframework.kafka:spring-kafka') {
+        exclude group: 'org.springframework.boot', module: 'spring-boot-starter-logging'
+    }
+}

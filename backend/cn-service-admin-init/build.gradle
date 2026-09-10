@@ -1,0 +1,28 @@
+plugins {
+    id 'org.springframework.boot' version "${springBootVersion}"
+    id 'io.spring.dependency-management' version "${springDependencyManagementVersion}"
+}
+
+dependencies {
+    implementation project(':cn-common')
+    implementation project(':cn-rule-sdk')
+    implementation project(':cn-timeseries-api')
+    implementation 'org.springframework.boot:spring-boot-starter'
+    implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+    implementation 'org.springframework.boot:spring-boot-starter-json'
+    // 提供 jackson 依赖，修复 sa-token-jackson ClassNotFound 报错
+    implementation 'org.springframework.security:spring-security-crypto:6.4.2'
+    runtimeOnly "com.mysql:mysql-connector-j:${rootProject.ext.versions.mysql}"
+}
+
+processResources {
+    from("${rootProject.projectDir}/sql") {
+        include 'schema-system.sql', 'schema-device.sql', 'schema-engine.sql', 'schema-device-greptime.sql'
+        into 'schema'
+    }
+}
+
+// 排除不需要的打包项，或者配置为纯 command line jar
+bootJar {
+    archiveClassifier = 'cli'
+}

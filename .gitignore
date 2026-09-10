@@ -1,0 +1,54 @@
+# Operating systems
+.DS_Store
+Thumbs.db
+
+# Editors and IDEs
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+*.swp
+*.swo
+*~
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.local
+
+# Java and Gradle
+.gradle/
+**/build/
+**/out/
+*.class
+hs_err_pid*
+replay_pid*
+
+# Node.js and frontend builds
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+.vite/
+**/.vite/
+.pnpm-store/
+coverage/
+**/coverage/
+*.tsbuildinfo
+
+# Runtime data and logs
+logs/
+**/logs/
+*.log
+*.log.*
+/data/
+/uploads/
+/tmp/
+/temp/
+
+# Test and tooling caches
+.cache/
+.eslintcache
+.stylelintcache

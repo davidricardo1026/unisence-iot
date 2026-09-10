@@ -1,0 +1,10 @@
+plugins {
+    id 'java-library'
+}
+
+dependencies {
+    api project(':cn-timeseries-api')
+    implementation "io.greptime:ingester-all:${rootProject.ext.versions.greptime}"
+    implementation "com.mysql:mysql-connector-j:${rootProject.ext.versions.mysql}"
+    implementation "com.zaxxer:HikariCP:${rootProject.ext.versions.hikari}"
+}

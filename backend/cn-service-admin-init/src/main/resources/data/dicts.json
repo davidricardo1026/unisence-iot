@@ -1,0 +1,44 @@
+{
+  "dictTypes": [
+    {
+      "id": 1,
+      "name": "用户账号状态",
+      "type": "sys_user_status"
+    },
+    {
+      "id": 2,
+      "name": "设备运行状态",
+      "type": "device_status"
+    }
+  ],
+  "dictData": [
+    {
+      "id": 1,
+      "sort": 1,
+      "label": "正常",
+      "val": "1",
+      "type": "sys_user_status"
+    },
+    {
+      "id": 2,
+      "sort": 2,
+      "label": "禁用",
+      "val": "0",
+      "type": "sys_user_status"
+    },
+    {
+      "id": 3,
+      "sort": 1,
+      "label": "在线",
+      "val": "online",
+      "type": "device_status"
+    },
+    {
+      "id": 4,
+      "sort": 2,
+      "label": "离线",
+      "val": "offline",
+      "type": "device_status"
+    }
+  ]
+}

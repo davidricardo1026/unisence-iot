@@ -1,0 +1,33 @@
+// 元数据同步总线（metadata-sync-bus.md）的可共享实现。
+//
+// 为什么单独成库：规则 topology 按 capacity-benchmark.md §三 结论 6 跑在独立进程，
+// 但它与 cn-service-engine 需要**同一份**水位合并、候选根构建与设备缓存 ——
+// 两份实现意味着两套收敛语义，迟早在「谁看到了哪个提交」上分叉。
+//
+// 为什么允许依赖 Vert.x 客户端：vertx-sqlclient / vertx-redis-client 是**驱动库而非运行时框架**，
+// 不部署 verticle 也能使用，且 Future.await() 在普通平台线程上可用（已实测）。
+// 让本库直接持有它们，换来的是同步总线只有一份实现；反过来若为了「库不依赖 Vert.x」
+// 而抽一层 Row/JSON 中间表示，收益只是换个驱动，代价却是每个 loader 都要重写一遍映射。
+//
+// 本库**不含任何生命周期胶水**：Vert.x 的 MetadataSyncVerticle 留在 cn-service-engine，
+// 规则进程的装配由 cn-service-rule-stream 自己决定。
+dependencies {
+    // 零依赖内核：MetaKeyEnum、MetadataScope、Result 等跨模块常量与值对象
+    implementation project(':cn-common-core')
+
+    // MessageType —— 规则索引键 (productKey, messageType) 的一半
+    implementation project(':cn-iot-message')
+
+    // 规则配置模型与沙箱编译器：CompiledRule 持有编译产物
+    implementation project(':cn-rule-sdk')
+
+    implementation "io.vertx:vertx-core:${rootProject.ext.versions.vertx}"
+    implementation "io.vertx:vertx-mysql-client:${rootProject.ext.versions.vertx}"
+    implementation "io.vertx:vertx-redis-client:${rootProject.ext.versions.vertx}"
+
+    // 设备投影 L1
+    implementation "com.github.ben-manes.caffeine:caffeine:${rootProject.ext.versions.caffeine}"
+
+    // 设备 L2 缓存 payload 编解码
+    implementation "org.msgpack:msgpack-core:${rootProject.ext.versions.msgpack}"
+}

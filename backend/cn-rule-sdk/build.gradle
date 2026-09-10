@@ -1,0 +1,29 @@
+plugins {
+    id 'java-library'
+}
+
+// 规则引擎脚本 SDK 与配置模型。
+//
+// 为什么是独立模块而不是 cn-common 的一个包：
+//   1. 它被 cn-service-admin（保存规则时编译校验）与 cn-service-engine（刷新快照时编译）共享——
+//      engine 禁止任何 HTTP 接口，admin 无法把编译请求转给它，因此共享是硬约束；
+//   2. 但它包含 Groovy 编译器、AST 沙箱与自定义 ClassLoader，是一个独立子系统，
+//      超出 cn-common「常量、DTO、工具类」的职责定位；
+//   3. 独立模块后 Groovy 是正常的 implementation 依赖，不必再用 compileOnly 规避对
+//      cn-driver-* 的传染，驱动侧连这些包都看不见。
+//
+// 本模块刻意不依赖 cn-common：sdk/config 两个子包是纯 Java，
+// RuleScriptException 也不继承 BusinessException（engine 无 HTTP 层，不该被迫依赖北向异常语义）。
+dependencies {
+    // MessageType 是 us_iot_rule.message_type 与 ListenerConfig 的取值域，与线上消息模型同源。
+    // api 而非 implementation：它出现在 MessageEnvelope / RuleDefinition 的公开签名上，
+    // 消费方（admin 规则 CRUD、engine 快照加载）编译期必须看得见。
+    api project(':cn-iot-message')
+
+    // 仅 rule.compiler 子包需要；声明为 implementation，
+    // 消费方拿到运行期 Groovy 但编译期看不到它，避免业务代码误用 Groovy API。
+    implementation "org.apache.groovy:groovy:${rootProject.ext.versions.groovy}"
+
+    testImplementation "org.apache.groovy:groovy:${rootProject.ext.versions.groovy}"
+}
+

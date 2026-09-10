@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  engine —— **开发/联调** 日志（architecture-features/logging-runtime.md §4）。
+  目标是好用，不追求生产级严谨：Console 为主，文件不设保留上限
+  （开发机上日志被删是小事，翻不到才是大事）。
+
+  全局异步无锁由 log4j2.component.properties 的 AsyncLoggerContextSelector 提供，
+  因此这里的 appender **不需要再包 <Async>** —— 整个 logger 调用已在 Disruptor 上。
+
+  压测时若要让日志绝不阻塞业务线程，追加 -Dlog4j2.asyncQueueFullPolicy=Discard
+  （丢弃 INFO 及以下）。生产**不要**这么做，见 §4.3。
+-->
+<!--
+  shutdownHook="disable"：Log4j2 默认注册自己的 JVM 关闭钩子，会与应用的停机钩子
+  **并发**竞争。它一旦先跑完，应用停机期间的每一条记录都变成
+  "Ignoring log event after log4j was shut down" 被丢弃 —— 日志文件里干干净净，
+  和「停机很干净」外观完全一致，等于把停机期的故障整段设为不可观测。
+  全局异步日志（见 log4j2.component.properties）让这一点更严重：ring buffer 里
+  未刷出的记录一并丢失。
+  禁用后**必须**由应用在停机钩子最后一步显式 LogManager.shutdown()，
+  否则异步队列不会被刷出。落点见 EngineBootstrap / RuleStreamBootstrap。
+-->
+<Configuration status="WARN" shutdownHook="disable">
+    <Properties>
+        <Property name="LOG_DIR">${sys:log.dir:-./log}</Property>
+        <!-- 刻意不含 %L/%M/%C/%F：异步下捕获调用位置要同步做栈回溯（§2.1） -->
+        <Property name="PATTERN">%d{HH:mm:ss.SSS} %highlight{%-5level} [%t] %logger{1.} - %msg%n%ex</Property>
+    </Properties>
+
+    <Appenders>
+        <Console name="Console" target="SYSTEM_OUT">
+            <PatternLayout charset="UTF-8" pattern="${PATTERN}"/>
+        </Console>
+
+        <RollingFile name="File" fileName="${LOG_DIR}/engine.log"
+                     filePattern="${LOG_DIR}/engine-%d{yyyy-MM-dd}-%i.log">
+            <PatternLayout charset="UTF-8" pattern="${PATTERN}"/>
+            <Policies>
+                <TimeBasedTriggeringPolicy/>
+                <SizeBasedTriggeringPolicy size="100 MB"/>
+            </Policies>
+            <!-- dev 刻意不配 Delete：开发机上翻不到历史日志比占盘更麻烦 -->
+            <DefaultRolloverStrategy max="20"/>
+        </RollingFile>
+    </Appenders>
+
+    <Loggers>
+        <Logger name="com.unisence.iot" level="INFO"/>
+        <Logger name="io.vertx" level="WARN"/>
+        <Logger name="org.apache.kafka" level="WARN"/>
+        <Logger name="io.greptime" level="WARN"/>
+
+        <Root level="INFO">
+            <AppenderRef ref="Console"/>
+            <AppenderRef ref="File"/>
+        </Root>
+    </Loggers>
+</Configuration>

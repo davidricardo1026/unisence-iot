@@ -1,0 +1,22 @@
+[
+  {
+    "userCode": "superAdmin",
+    "userName": "超级管理员",
+    "plaintextPassword": "superAdmin123",
+    "deptName": "ROOT_DEPT",
+    "phone": "13800000001",
+    "status": 1,
+    "roleCodes": []
+  },
+  {
+    "userCode": "admin",
+    "userName": "管理员",
+    "plaintextPassword": "admin123",
+    "deptName": "ROOT_DEPT",
+    "phone": "13800000000",
+    "status": 1,
+    "roleCodes": [
+      "admin"
+    ]
+  }
+]
